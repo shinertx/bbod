@@ -1,0 +1,1 @@
+Run `pnpm` inside this folder; then `pnpm dev` for localhost:3000. 

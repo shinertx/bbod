@@ -1,0 +1,20 @@
+{
+  "name": "blob-edge-stack",
+  "private": true,
+  "scripts": {
+    "daemon": "node daemon/blobDaemon.ts",
+    "ws": "node daemon/wsBridge.ts",
+    "frontend": "pnpm --prefix frontend dev"
+  },
+  "dependencies": {
+    "ethers": "^6.9.0",
+    "ioredis": "^5.3.2",
+    "node-fetch": "^3.3.2",
+    "dotenv": "^16.3.1",
+    "socket.io": "^4.7.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.2",
+    "@types/node": "^20.8.0"
+  }
+} 
