@@ -7,10 +7,11 @@ import "../contracts/BlobParimutuel.sol";
 contract Deploy is Script {
     function run() external {
         vm.startBroadcast();
-        BlobOptionDesk desk = new BlobOptionDesk();
-        BlobParimutuel pm = new BlobParimutuel();
+        address oracle = vm.envAddress("BLOB_ORACLE");
+        BlobOptionDesk desk = new BlobOptionDesk(oracle);
+        BlobParimutuel pm  = new BlobParimutuel(oracle);
         console.log("BBOD:", address(desk));
         console.log("BSP :", address(pm));
         vm.stopBroadcast();
     }
-} 
+}

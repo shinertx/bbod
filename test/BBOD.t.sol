@@ -6,7 +6,7 @@ import "../contracts/BlobOptionDesk.sol";
 contract BBODFuzz is Test {
     BlobOptionDesk desk;
     address buyer = address(0xBEEF);
-    function setUp() public { desk = new BlobOptionDesk(); }
+    function setUp() public { desk = new BlobOptionDesk(address(0)); }
 
     function testFuzz(uint96 fee,uint96 strike) public {
         fee   = uint96(bound(fee,0,200));

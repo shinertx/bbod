@@ -14,14 +14,17 @@ contract BlobOptionDesk is BaseBlobVault {
 
     address public immutable writer;
     uint256 public k = 7e15;
-    IBlobBaseFee private constant F
-        = IBlobBaseFee(0x0000000000000000000000000000000000000000);
+    IBlobBaseFee public immutable F;
 
     mapping(uint256=>Series) public series;
+    mapping(uint256=>bool) public seriesSettled;
     mapping(address=>mapping(uint256=>uint256)) public bal;
     uint256 public writerPremiumEscrow;
 
-    constructor() payable { writer = msg.sender; }
+    constructor(address feeOracle) payable {
+        writer = msg.sender;
+        F = IBlobBaseFee(feeOracle);
+    }
 
     function create(
         uint256 id,
@@ -59,16 +62,22 @@ contract BlobOptionDesk is BaseBlobVault {
     function settle(uint256 id) external {
         Series storage s = series[id];
         require(block.timestamp >= s.expiry, "!exp");
-        require(!settled, "global settled");
+        require(!seriesSettled[id], "series settled");
         uint256 fee = F.blobBaseFee();
         if (fee > s.strike) {
             s.payWei = (fee - s.strike) * 1 gwei;
         }
-        _settle(fee);
+        seriesSettled[id] = true;
+
+        if (s.payWei == 0 && msg.sender == writer) {
+            uint256 refund = s.margin;
+            s.margin = 0;
+            payable(writer).transfer(refund);
+        }
     }
     function exercise(uint256 id) external {
         Series storage s = series[id];
-        require(settled, "unsettled");
+        require(seriesSettled[id], "unsettled");
         uint256 qty = bal[msg.sender][id];
         bal[msg.sender][id] = 0;
         uint256 due = qty * s.payWei;
