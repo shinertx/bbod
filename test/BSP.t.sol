@@ -20,7 +20,14 @@ contract BSPFuzz is Test {
         pm.betHi{value: betAmount}();
         
         vm.warp(block.timestamp + 3600 + 12);
-        vm.store(address(pm), bytes32(uint256(2)), bytes32(uint256(fee)));
+        
+        // Mock the blobBaseFee call
+        vm.mockCall(
+            address(0), // zero address
+            abi.encodeWithSignature("blobBaseFee()"),
+            abi.encode(fee)
+        );
+        
         pm.settle();
         
         vm.prank(bettor);

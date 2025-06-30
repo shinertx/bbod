@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 import "./BaseBlobVault.sol";
-interface IBlobBaseFee { function blobBaseFee() external view returns (uint256); }
+import "./IBlobBaseFee.sol";
 
 contract BlobParimutuel is BaseBlobVault {
     struct Round {

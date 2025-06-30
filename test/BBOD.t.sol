@@ -18,7 +18,14 @@ contract BBODFuzz is Test {
         vm.prank(buyer);
         desk.buy{value: prem}(1,1);
         vm.warp(block.timestamp+2);
-        vm.store(address(desk),bytes32(uint256(2)),bytes32(uint256(fee)));
+        
+        // Mock the blobBaseFee call
+        vm.mockCall(
+            address(0), // zero address
+            abi.encodeWithSignature("blobBaseFee()"),
+            abi.encode(fee)
+        );
+        
         desk.settle(1);
         vm.prank(buyer);
         desk.exercise(1);
