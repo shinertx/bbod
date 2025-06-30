@@ -31,8 +31,12 @@ contract BSPFuzz is Test {
         pm.betLo{value: loBet}();
 
         vm.warp(block.timestamp + 3600 + 12);
-        // cheat the fee into storage
-        vm.store(address(pm), bytes32(uint256(2)), bytes32(uint256(fee)));
+        // Mock the blobBaseFee oracle response
+        vm.mockCall(
+            address(0),
+            abi.encodeWithSignature("blobBaseFee()"),
+            abi.encode(fee)
+        );
 
         pm.settle();
 
