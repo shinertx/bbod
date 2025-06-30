@@ -17,6 +17,7 @@ contract BlobParimutuel is BaseBlobVault, ReentrancyGuard {
     uint256 public constant BET_CUTOFF = 300; // seconds before closeTs when betting stops
     uint256 public cur;
     address public owner;
+    uint256 public nextThresholdGwei; // threshold to apply to the *next* round if preset
     IBlobBaseFee public immutable F;
 
     mapping(uint256=>Round) public rounds;
@@ -101,9 +102,12 @@ contract BlobParimutuel is BaseBlobVault, ReentrancyGuard {
         payable(msg.sender).transfer(pay);
     }
 
-    function _open(uint256 thr) internal {
+    function _open(uint256 thrFallback) internal {
         settled = false;
         cur += 1;
+        uint256 thr = nextThresholdGwei != 0 ? nextThresholdGwei : thrFallback;
+        // clear for subsequent rounds
+        nextThresholdGwei = 0;
         rounds[cur] = Round({
             closeTs: block.timestamp + 3600,
             hiPool: 0,
@@ -114,9 +118,11 @@ contract BlobParimutuel is BaseBlobVault, ReentrancyGuard {
         });
         emit NewRound(cur, block.timestamp+3600, thr);
     }
-    function setThreshold(uint256 nextThr) external onlyOwner {
+
+    /// @notice Set threshold for the *next* round; cannot modify current round once bets exist.
+    function setNextThreshold(uint256 thr) external onlyOwner {
         Round storage r = rounds[cur];
         require(r.hiPool == 0 && r.loPool == 0, "bets placed");
-        r.thresholdGwei = nextThr;
+        nextThresholdGwei = thr;
     }
 } 
