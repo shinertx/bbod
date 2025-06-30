@@ -11,6 +11,8 @@ contract CapSpikeOptionTest is Test {
     address writer = address(this);
     address[] signers;
 
+    receive() external payable {}
+
     function setUp() public {
         signers.push(address(this));
         oracle = new BlobFeeOracle(signers, 1);
@@ -25,6 +27,12 @@ contract CapSpikeOptionTest is Test {
 
         // writer create series with margin
         desk.create{value: maxPay}(1, strike, cap, block.timestamp + 1, maxSold);
+
+        // buyer purchase to create open interest
+        uint256 prem = desk.premium(strike, block.timestamp + 1);
+        vm.deal(address(1), prem);
+        vm.prank(address(1));
+        desk.buy{value: prem}(1, 1);
 
         // warp to expiry+1 and push fee above cap
         vm.warp(block.timestamp + 2);

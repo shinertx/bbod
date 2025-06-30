@@ -44,8 +44,8 @@ contract WinnerlessParimutuel is Test {
         pm.claim(1);
 
         uint256 balAfter = bettor.balance;
-        // refund should be ~99.5 % of stake
-        assertApproxEqAbs(balAfter - balBefore, (stake * 995) / 1000, 1e14);
+        // refund should equal the full stake (no rake)
+        assertEq(balAfter - balBefore, stake);
     }
 
     function _getClose() internal view returns(uint256 close){

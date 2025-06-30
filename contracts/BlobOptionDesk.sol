@@ -21,6 +21,11 @@ contract BlobOptionDesk {
     mapping(uint256=>bool) public seriesSettled;
     mapping(address=>mapping(uint256=>uint256)) public bal;
     uint256 public writerPremiumEscrow;
+    mapping(uint256 => uint256) public premiumUnlock; // per-series earliest premium withdrawal time
+
+    // Events
+    event PayCapped(uint256 indexed id, uint256 rawWei, uint256 capWei);
+    event SettleBounty(uint256 indexed id, address indexed caller, uint256 bountyWei);
 
     constructor(address feeOracle) payable {
         writer = msg.sender;
@@ -70,6 +75,11 @@ contract BlobOptionDesk {
         s.sold += qty;
         bal[msg.sender][id] += qty;
         writerPremiumEscrow += msg.value;
+
+        // start unlock timer once first premium arrives for this series
+        if (premiumUnlock[id] == 0) {
+            premiumUnlock[id] = block.timestamp + 2 hours;
+        }
     }
 
     function settle(uint256 id) external {
@@ -79,13 +89,26 @@ contract BlobOptionDesk {
         uint256 fee = F.blobBaseFee();
         uint256 cap = s.cap;
         if (fee > cap) fee = cap;
-        if (fee > s.strike) {
-            s.payWei = (fee - s.strike) * 1 gwei;
+        uint256 rawPay = fee > s.strike ? (fee - s.strike) * 1 gwei : 0;
+        uint256 maxPayPerOpt = s.sold == 0 ? 0 : s.margin / s.sold;
+        s.payWei = rawPay > maxPayPerOpt ? maxPayPerOpt : rawPay;
+        if (rawPay > maxPayPerOpt) {
+            emit PayCapped(id, rawPay, maxPayPerOpt);
         }
+
+        // bounty to caller
+        uint256 bounty = address(this).balance * SETTLE_BOUNTY_BP / 10_000;
+        if (bounty > 0) {
+            payable(msg.sender).transfer(bounty);
+            emit SettleBounty(id, msg.sender, bounty);
+        }
+
         seriesSettled[id] = true;
 
         if (s.payWei == 0 && msg.sender == writer) {
             uint256 refund = s.margin;
+            uint256 bal = address(this).balance;
+            if (refund > bal) refund = bal;
             s.margin = 0;
             payable(writer).transfer(refund);
         }
@@ -128,8 +151,10 @@ contract BlobOptionDesk {
         payable(writer).transfer(amt);
     }
 
-    function withdrawPremiums() external {
+    /// @notice Withdraw all accumulated premiums once any series-level lock expires.
+    function withdrawPremiums(uint256 id) external {
         require(msg.sender == writer, "!w");
+        require(block.timestamp >= premiumUnlock[id], "locked");
         uint256 amt = writerPremiumEscrow;
         writerPremiumEscrow = 0;
         payable(writer).transfer(amt);
@@ -142,4 +167,6 @@ contract BlobOptionDesk {
         require(s.expiry != 0, "bad id");
         s.margin += msg.value;
     }
+
+    uint256 public constant SETTLE_BOUNTY_BP = 10; // 0.10 %
 } 
