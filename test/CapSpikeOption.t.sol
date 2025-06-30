@@ -31,7 +31,7 @@ contract CapSpikeOptionTest is Test {
         oracle.push(200); // fee higher than cap
 
         desk.settle(1);
-        (, , , , uint256 payWei, ) = desk.series(1);
+        (,,, , uint256 payWei,,) = desk.series(1);
         assertEq(payWei, (cap - strike) * 1 gwei);
     }
 } 

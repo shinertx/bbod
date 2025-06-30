@@ -14,6 +14,7 @@ contract BlobParimutuel is BaseBlobVault, ReentrancyGuard {
         uint256 settlePriceGwei;
     }
     uint256 public constant RAKE_BP = 500;
+    uint256 public constant BET_CUTOFF = 300; // seconds before closeTs when betting stops
     uint256 public cur;
     address public owner;
     IBlobBaseFee public immutable F;
@@ -41,7 +42,7 @@ contract BlobParimutuel is BaseBlobVault, ReentrancyGuard {
 
     function _bet(bool hi) internal {
         Round storage r = rounds[cur];
-        require(block.timestamp < r.closeTs, "closed");
+        require(block.timestamp < r.closeTs - BET_CUTOFF, "cutoff");
         if(hi){hiBet[cur][msg.sender]+=msg.value; r.hiPool+=msg.value;}
         else  {loBet[cur][msg.sender]+=msg.value; r.loPool+=msg.value;}
         emit Bet(cur,msg.sender,hi,msg.value);
@@ -114,6 +115,8 @@ contract BlobParimutuel is BaseBlobVault, ReentrancyGuard {
         emit NewRound(cur, block.timestamp+3600, thr);
     }
     function setThreshold(uint256 nextThr) external onlyOwner {
-        rounds[cur].thresholdGwei = nextThr;
+        Round storage r = rounds[cur];
+        require(r.hiPool == 0 && r.loPool == 0, "bets placed");
+        r.thresholdGwei = nextThr;
     }
 } 

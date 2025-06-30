@@ -29,6 +29,7 @@ contract EscrowedSeriesOptionDesk is ReentrancyGuard {
         uint256 sold;       // qty sold
         uint256 escBalance; // ETH escrowed solely for this series
         bool    settled;    // settlement flag
+        uint256 maxSold;    // upper limit of options that can be sold
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -91,7 +92,8 @@ contract EscrowedSeriesOptionDesk is ReentrancyGuard {
             payWei: 0,
             sold: 0,
             escBalance: msg.value,
-            settled: false
+            settled: false,
+            maxSold: maxSold
         });
 
         emit Created(id, strike, expiry, maxPay);
@@ -137,6 +139,7 @@ contract EscrowedSeriesOptionDesk is ReentrancyGuard {
         require(S.expiry != 0, "bad id");
         require(block.timestamp < S.expiry, "exp");
         require(msg.value == premium(id) * qty, "prem");
+        require(S.sold + qty <= S.maxSold, "oversell");
 
         bal[id][msg.sender] += qty;
         S.sold += qty;

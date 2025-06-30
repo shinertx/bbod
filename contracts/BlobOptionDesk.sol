@@ -10,6 +10,7 @@ contract BlobOptionDesk {
         uint256 sold;
         uint256 payWei;
         uint256 margin;
+        uint256 maxSold;
     }
 
     address public immutable writer;
@@ -40,7 +41,15 @@ contract BlobOptionDesk {
         uint256 maxPay = (capGwei - strikeGwei) * 1 gwei * maxSold;
         require(maxPay <= 100 ether, "liability");
         require(msg.value >= maxPay, "insuff margin");
-        series[id] = Series(strikeGwei, capGwei, expiry, 0, 0, msg.value);
+        series[id] = Series({
+            strike: strikeGwei,
+            cap: capGwei,
+            expiry: expiry,
+            sold: 0,
+            payWei: 0,
+            margin: msg.value,
+            maxSold: maxSold
+        });
     }
 
     function premium(uint256 strike, uint256 expiry) public view returns (uint256) {
@@ -57,6 +66,7 @@ contract BlobOptionDesk {
         require(block.timestamp < s.expiry, "exp");
         uint256 p = premium(s.strike, s.expiry);
         require(msg.value == p * qty, "!prem");
+        require(s.sold + qty <= s.maxSold, "oversell");
         s.sold += qty;
         bal[msg.sender][id] += qty;
         writerPremiumEscrow += msg.value;
@@ -125,5 +135,11 @@ contract BlobOptionDesk {
         payable(writer).transfer(amt);
     }
 
-    function topUpMargin() external payable {}
+    /// @notice Top up margin for a specific series.  Allows writer (or anyone)
+    ///         to add additional collateral if volatility spikes.
+    function topUpMargin(uint256 id) external payable {
+        Series storage s = series[id];
+        require(s.expiry != 0, "bad id");
+        s.margin += msg.value;
+    }
 } 
