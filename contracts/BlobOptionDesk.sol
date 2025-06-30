@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
-import "./BaseBlobVault.sol";
 import "./IBlobBaseFee.sol";
 
-contract BlobOptionDesk is BaseBlobVault {
+contract BlobOptionDesk {
     struct Series {
         uint256 strike;
         uint256 expiry;
@@ -82,7 +81,35 @@ contract BlobOptionDesk is BaseBlobVault {
         bal[msg.sender][id] = 0;
         uint256 due = qty * s.payWei;
         require(address(this).balance >= due, "insolv");
+        require(s.margin >= due, "margin");
+        s.sold -= qty;
+        s.margin -= due;
         payable(msg.sender).transfer(due);
+    }
+
+    /// @notice withdraw margin for OTM series after settlement
+    function withdrawMargin(uint256 id) external {
+        Series storage s = series[id];
+        require(msg.sender == writer, "!w");
+        require(seriesSettled[id], "unsettled");
+        require(s.payWei == 0, "ITM");
+        uint256 amt = s.margin;
+        require(amt > 0, "none");
+        s.margin = 0;
+        payable(writer).transfer(amt);
+    }
+
+    uint256 public constant GRACE_PERIOD = 7 days;
+
+    /// @notice sweep remaining margin after all exercises or timeout
+    function sweepMargin(uint256 id) external {
+        Series storage s = series[id];
+        require(seriesSettled[id], "unsettled");
+        require(s.margin > 0, "none");
+        require(s.sold == 0 || block.timestamp > s.expiry + GRACE_PERIOD, "open");
+        uint256 amt = s.margin;
+        s.margin = 0;
+        payable(writer).transfer(amt);
     }
 
     function withdrawPremiums() external {
