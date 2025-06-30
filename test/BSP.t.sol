@@ -1,52 +1,52 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.23;
 import "forge-std/Test.sol";
-import "../contracts/BlobParimutuel.sol";
+import "../contracts/CommitRevealBSP.sol";
+import "../contracts/BlobFeeOracle.sol";
 
 contract BSPFuzz is Test {
-    BlobParimutuel pm;
-    address bettor = address(0xBEEF);
+    CommitRevealBSP pm;
+    BlobFeeOracle oracle;
+    address bettor = address(0xCAFE);
+    address[] signers;
     
     // allow this contract to receive ether (rake)
     receive() external payable {}
 
     function setUp() public {
-        pm = new BlobParimutuel(address(0));
+        signers.push(address(this));
+        oracle = new BlobFeeOracle(signers, 1);
+        pm = new CommitRevealBSP(address(oracle));
     }
 
-    function testFuzz(uint96 fee, uint96 betAmount) public {
-        fee = uint96(bound(fee,1,200));
-        betAmount = uint96(bound(betAmount,1e16,10 ether));
-        pm = new BlobParimutuel(address(0));
+    function testFuzz_FullCycle(uint96 betAmount, uint96 finalFee) public {
+        betAmount = uint96(bound(betAmount, 1, 1e18));
+        finalFee = uint96(bound(finalFee, 0, 200));
 
-        // Place HI bet
+        // 1. Bettor commits HI
         vm.deal(bettor, betAmount);
+        bytes32 salt = keccak256("mysecret");
+        bytes32 commit = keccak256(abi.encodePacked(bettor, CommitRevealBSP.Side.Hi, salt));
         vm.prank(bettor);
-        pm.betHi{value: betAmount}();
+        pm.commit{value: betAmount}(commit);
 
-        // Place LO bet (ensure nonzero pool for both)
-        uint96 loBet = betAmount; // or some fraction
-        vm.deal(address(0xCAFE), loBet);
-        vm.prank(address(0xCAFE));
-        pm.betLo{value: loBet}();
+        // 2. Forward to reveal phase
+        vm.warp(block.timestamp + 301);
 
-        vm.warp(block.timestamp + 3600 + 12);
-        // Mock the blobBaseFee oracle response
-        vm.mockCall(
-            address(0),
-            abi.encodeWithSignature("blobBaseFee()"),
-            abi.encode(fee)
-        );
+        vm.prank(bettor);
+        pm.reveal(CommitRevealBSP.Side.Hi, salt);
+
+        // 3. Forward to settlement (after reveal window end)
+        ( , , uint256 revealTs, , , , , , ) = pm.rounds(1);
+        vm.warp(revealTs + 1);
+
+        vm.prank(address(this));
+        oracle.push(finalFee);
 
         pm.settle();
 
-        // Destructure the round tuple
-        (uint256 closeTs, uint256 hiPool, uint256 loPool, uint256 feeWei, uint256 thresholdGwei, uint256 settlePriceGwei) = pm.rounds(1);
-        bool hiWin = fee >= thresholdGwei;
-        uint256 winPool = hiWin ? hiPool : loPool;
-        vm.assume(winPool > 0);
-
-        vm.prank(hiWin ? bettor : address(0xCAFE));
-        pm.claim(1);
+        // 4. Claim
+        vm.prank(bettor);
+        pm.claim(1, CommitRevealBSP.Side.Hi, salt);
     }
 } 
