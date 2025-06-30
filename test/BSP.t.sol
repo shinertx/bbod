@@ -10,14 +10,14 @@ contract BSPFuzz is Test {
     // allow this contract to receive ether (rake)
     receive() external payable {}
 
-    function setUp() public { 
-        pm = new BlobParimutuel(); 
+    function setUp() public {
+        pm = new BlobParimutuel(address(0));
     }
 
     function testFuzz(uint96 fee, uint96 betAmount) public {
         fee = uint96(bound(fee,0,200));
         betAmount = uint96(bound(betAmount,1e16,10 ether));
-        pm = new BlobParimutuel();
+        pm = new BlobParimutuel(address(0));
 
         // Place HI bet
         vm.deal(bettor, betAmount);
@@ -41,7 +41,7 @@ contract BSPFuzz is Test {
         pm.settle();
 
         // Destructure the round tuple
-        (uint256 closeTs, uint256 hiPool, uint256 loPool, uint256 feeWei, uint256 thresholdGwei) = pm.rounds(1);
+        (uint256 closeTs, uint256 hiPool, uint256 loPool, uint256 feeWei, uint256 thresholdGwei, uint256 settlePriceGwei) = pm.rounds(1);
         bool hiWin = fee >= thresholdGwei;
         uint256 winPool = hiWin ? hiPool : loPool;
         vm.assume(winPool > 0);

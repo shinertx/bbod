@@ -10,11 +10,12 @@ contract BlobParimutuel is BaseBlobVault {
         uint256 loPool;
         uint256 feeWei;
         uint256 thresholdGwei;
+        uint256 settlePriceGwei;
     }
     uint256 public constant RAKE_BP = 500;
     uint256 public cur;
     address public owner;
-    IBlobBaseFee private constant F = IBlobBaseFee(0x0000000000000000000000000000000000000000);
+    IBlobBaseFee public immutable F;
 
     mapping(uint256=>Round) public rounds;
     mapping(uint256=>mapping(address=>uint256)) public hiBet;
@@ -25,7 +26,11 @@ contract BlobParimutuel is BaseBlobVault {
 
     modifier onlyOwner(){ require(msg.sender==owner,"!own"); _; }
 
-    constructor() { owner=msg.sender; _open(25); }
+    constructor(address feeOracle) {
+        owner = msg.sender;
+        F = IBlobBaseFee(feeOracle);
+        _open(25);
+    }
 
     receive() external payable {}
 
@@ -51,14 +56,15 @@ contract BlobParimutuel is BaseBlobVault {
         r.feeWei = rake;
         payable(owner).transfer(rake);
 
+        r.settlePriceGwei = feeGwei;
         _settle(feeGwei);
         _open(r.thresholdGwei);
     }
 
     function claim(uint256 id) external {
         Round storage r = rounds[id];
-        require(settled, "unsettled");
-        bool hiWin = settlePriceGwei >= r.thresholdGwei;
+        require(r.settlePriceGwei != 0, "round unsettled");
+        bool hiWin = r.settlePriceGwei >= r.thresholdGwei;
         uint256 share = hiWin ? hiBet[id][msg.sender] : loBet[id][msg.sender];
         require(share>0, "none");
         if(hiWin) hiBet[id][msg.sender]=0; else loBet[id][msg.sender]=0;
@@ -72,13 +78,15 @@ contract BlobParimutuel is BaseBlobVault {
     }
 
     function _open(uint256 thr) internal {
+        settled = false;
         cur += 1;
         rounds[cur] = Round({
             closeTs: block.timestamp + 3600,
             hiPool: 0,
             loPool: 0,
             feeWei: 0,
-            thresholdGwei: thr
+            thresholdGwei: thr,
+            settlePriceGwei: 0
         });
         emit NewRound(cur, block.timestamp+3600, thr);
     }
