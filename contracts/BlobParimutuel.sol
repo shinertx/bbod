@@ -65,6 +65,9 @@ contract BlobParimutuel is BaseBlobVault {
         uint256 winPool = hiWin ? r.hiPool : r.loPool;
         uint256 totalPool = r.hiPool + r.loPool - r.feeWei;
         uint256 pay = share * totalPool / winPool;
+        // In rare cases of truncation, pay might exceed balance by 1 wei; cap it.
+        uint256 bal = address(this).balance;
+        if (pay > bal) pay = bal;
         payable(msg.sender).transfer(pay);
     }
 

@@ -7,6 +7,9 @@ contract BSPFuzz is Test {
     BlobParimutuel pm;
     address bettor = address(0xBEEF);
     
+    // allow this contract to receive ether (rake)
+    receive() external payable {}
+
     function setUp() public { 
         pm = new BlobParimutuel(); 
     }

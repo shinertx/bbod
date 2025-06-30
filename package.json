@@ -2,8 +2,8 @@
   "name": "blob-edge-stack",
   "private": true,
   "scripts": {
-    "daemon": "node daemon/blobDaemon.ts",
-    "ws": "node daemon/wsBridge.ts",
+    "daemon": "tsx daemon/blobDaemon.ts",
+    "ws": "tsx daemon/wsBridge.ts",
     "frontend": "pnpm --prefix frontend dev"
   },
   "dependencies": {
@@ -15,6 +15,7 @@
   },
   "devDependencies": {
     "typescript": "^5.4.2",
-    "@types/node": "^20.8.0"
+    "@types/node": "^20.8.0",
+    "tsx": "^4.7.0"
   }
 } 

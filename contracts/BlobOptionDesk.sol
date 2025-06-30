@@ -31,6 +31,7 @@ contract BlobOptionDesk is BaseBlobVault {
     ) external payable {
         require(msg.sender == writer, "!w");
         require(series[id].strike == 0, "exists");
+        require(strikeGwei < 200, "strike too high");
         uint256 maxPay = (200 - strikeGwei) * 1 gwei * maxSold;
         require(msg.value >= maxPay, "insuff margin");
         series[id] = Series(strikeGwei, expiry, 0, 0, msg.value);

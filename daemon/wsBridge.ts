@@ -7,4 +7,6 @@ const http = createServer();
 const io   = new Server(http,{ cors:{origin:"*"}});
 redis.subscribe("blobFee");
 redis.on("message", (_, msg)=> io.emit("blobFee", msg));
-http.listen(6379, ()=> console.log("WS relay up :6379")); 
+
+const PORT = Number(process.env.WS_PORT || 6380);
+http.listen(PORT, ()=> console.log(`WS relay up :${PORT}`)); 

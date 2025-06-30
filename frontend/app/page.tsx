@@ -5,7 +5,8 @@ import io from "socket.io-client";
 export default function Home() {
   const [fee, setFee] = useState("…");
   useEffect(() => {
-    const sock = io("ws://localhost:6379", { transports:["websocket"] });
+    const wsUrl = process.env.NEXT_PUBLIC_WS || "ws://localhost:6380";
+    const sock = io(wsUrl, { transports:["websocket"] });
     sock.on("blobFee", (d:string) => setFee(d));
     return () => sock.close();
   }, []);
