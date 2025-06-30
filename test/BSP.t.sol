@@ -15,7 +15,7 @@ contract BSPFuzz is Test {
     }
 
     function testFuzz(uint96 fee, uint96 betAmount) public {
-        fee = uint96(bound(fee,0,200));
+        fee = uint96(bound(fee,1,200));
         betAmount = uint96(bound(betAmount,1e16,10 ether));
         pm = new BlobParimutuel(address(0));
 

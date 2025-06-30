@@ -6,6 +6,10 @@ import "../contracts/BlobOptionDesk.sol";
 contract BBODFuzz is Test {
     BlobOptionDesk desk;
     address buyer = address(0xBEEF);
+
+    // allow this contract to receive ether (writer refund path)
+    receive() external payable {}
+
     function setUp() public { desk = new BlobOptionDesk(address(0)); }
 
     function testFuzz(uint96 fee,uint96 strike) public {
