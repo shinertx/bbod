@@ -2,6 +2,7 @@
 pragma solidity ^0.8.23;
 
 import "./IBlobBaseFee.sol";
+import "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title EscrowedSeriesOptionDesk
@@ -15,7 +16,7 @@ import "./IBlobBaseFee.sol";
  *         is final, and holders can exercise afterwards.  After a short grace
  *         period the writer may sweep any remaining escrow.
  */
-contract EscrowedSeriesOptionDesk {
+contract EscrowedSeriesOptionDesk is ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////////////////
                                     DATA TYPES
     //////////////////////////////////////////////////////////////////////////*/
@@ -78,8 +79,9 @@ contract EscrowedSeriesOptionDesk {
         require(msg.sender == writer, "!w");
         require(sData[id].expiry == 0, "exists");
         require(cap > strike, "cap<=strike");
-
+        require(cap - strike <= 100, "cap too high");
         uint256 maxPay = (cap - strike) * 1 gwei * maxSold;
+        require(maxPay <= 100 ether, "liability");
         require(msg.value >= maxPay, "escrow");
 
         sData[id] = Series({
@@ -106,6 +108,7 @@ contract EscrowedSeriesOptionDesk {
         require(S.expiry != 0, "bad id");
 
         uint256 T = S.expiry > block.timestamp ? S.expiry - block.timestamp : 0;
+        if (T > 30 days) T = 30 days;
         if (T == 0) return 0;
 
         uint256 sigma = 25e8; // 2.5e9 = 250% annualised vol in gwei units
@@ -163,7 +166,7 @@ contract EscrowedSeriesOptionDesk {
     }
 
     /// @notice Exercise in-the-money options for series `id`.
-    function exercise(uint256 id) external {
+    function exercise(uint256 id) external nonReentrant {
         Series storage S = sData[id];
         require(S.settled, "unsettled");
 
@@ -183,7 +186,7 @@ contract EscrowedSeriesOptionDesk {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Writer withdraws leftover escrow after a 1-hour grace period.
-    function sweepMargin(uint256 id) external {
+    function sweepMargin(uint256 id) external nonReentrant {
         Series storage S = sData[id];
         require(msg.sender == writer, "!w");
         require(S.settled && block.timestamp > S.expiry + 1 hours, "wait");

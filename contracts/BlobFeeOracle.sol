@@ -34,7 +34,7 @@ contract BlobFeeOracle is IBlobBaseFee {
     address[] public signers;
 
     /// @dev Number of required signatures for a slot to be considered final.
-    uint256 public immutable quorum; // e.g. 3-of-N
+    uint256 public quorum; // e.g. 3-of-N
 
     /// @dev Last canonical fee (gwei) that reached quorum.
     uint256 public lastFee;
@@ -48,6 +48,12 @@ contract BlobFeeOracle is IBlobBaseFee {
     /// @dev Mapping slot => running sum of fee observations.
     mapping(uint256 => uint256) private feeSum;
 
+    /// @dev Address of the timelock contract.
+    address public immutable timelock;
+
+    /// @dev Boolean indicating whether the contract is paused.
+    bool public paused;
+
     /*//////////////////////////////////////////////////////////////////////////
                                    CONSTRUCTOR
     //////////////////////////////////////////////////////////////////////////*/
@@ -60,6 +66,7 @@ contract BlobFeeOracle is IBlobBaseFee {
 
         signers = _signers;
         quorum  = _quorum;
+        timelock = msg.sender; // deployer becomes timelock
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -85,6 +92,7 @@ contract BlobFeeOracle is IBlobBaseFee {
     /// @notice Push a new fee observation for the current 12-second slot.
     /// @param feeGwei Observed blob base fee in gwei (sanity-capped < 1000 gwei).
     function push(uint256 feeGwei) external onlySigner {
+        require(!paused, "paused");
         require(feeGwei < 1_000, "sanity");
 
         uint256 slot = block.timestamp / 12; // 12-second slots – tolerate clock skew.
@@ -133,4 +141,33 @@ contract BlobFeeOracle is IBlobBaseFee {
             unchecked { c++; }
         }
     }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                              GOVERNANCE UPGRADE
+    //////////////////////////////////////////////////////////////////////////*/
+
+    address[] private pendingSigners;
+    uint256  private pendingQuorum;
+    uint256  private readyTs;
+    uint256  public constant UPGRADE_DELAY = 48 hours;
+
+    function proposeSigners(address[] calldata _new, uint256 _q) external {
+        require(msg.sender == timelock, "!tl");
+        require(_new.length > 0 && _new.length <= 256, "bad");
+        require(_q>0 && _q<=_new.length, "q");
+        delete pendingSigners;
+        for(uint i=0;i<_new.length;i++) pendingSigners.push(_new[i]);
+        pendingQuorum = _q;
+        readyTs = block.timestamp + UPGRADE_DELAY;
+    }
+
+    function execUpgrade() external {
+        require(msg.sender == timelock, "!tl");
+        require(readyTs!=0 && block.timestamp>=readyTs, "too early");
+        signers = pendingSigners;
+        quorum  = pendingQuorum;
+        delete readyTs;
+    }
+
+    function pause(bool p) external { require(msg.sender==timelock, "!tl"); paused=p; }
 } 

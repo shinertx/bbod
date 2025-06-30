@@ -2,6 +2,7 @@
 pragma solidity ^0.8.23;
 
 import "./IBlobBaseFee.sol";
+import "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title CommitRevealBSP
@@ -10,7 +11,7 @@ import "./IBlobBaseFee.sol";
  *         the final blocks before close.  Non-revealed tickets can be refunded
  *         (minus 1% grief-prevention fee) after a 1-hour grace window.
  */
-contract CommitRevealBSP {
+contract CommitRevealBSP is ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////////////////
                                      DATA TYPES
     //////////////////////////////////////////////////////////////////////////*/
@@ -54,6 +55,7 @@ contract CommitRevealBSP {
     IBlobBaseFee public immutable F;
 
     uint16 public constant RAKE_BP = 500; // 5%
+    uint256 public constant GRACE_NONREVEAL = 15 minutes;
 
     mapping(uint256 => mapping(address => Ticket)) public tickets; // round -> user -> ticket
     mapping(uint256 => Round) public rounds;                       // round -> round data
@@ -114,7 +116,7 @@ contract CommitRevealBSP {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Anyone may call once the reveal window has elapsed.
-    function settle() external {
+    function settle() external nonReentrant {
         Round storage R = rounds[cur];
         require(block.timestamp >= R.revealTs, "too early");
         require(!R.settled, "done");
@@ -146,7 +148,7 @@ contract CommitRevealBSP {
                                  POST-SETTLEMENT
     //////////////////////////////////////////////////////////////////////////*/
 
-    function claim(uint256 id, Side side, bytes32 salt) external {
+    function claim(uint256 id, Side side, bytes32 salt) external nonReentrant {
         Round storage R = rounds[id];
         require(R.settled, "unsettled");
 
@@ -167,15 +169,8 @@ contract CommitRevealBSP {
             }
         } else {
             // Non-revealed ticket – allow refund after grace
-            require(block.timestamp > R.revealTs + 1 hours, "grace");
-            uint256 refund;
-            if (rounds[id].hiPool == 0 || rounds[id].loPool == 0) {
-                // One-sided round: nearly full refund, keep 0.5% as gas buffer
-                refund = T.amount * 995 / 1000;
-            } else {
-                // Standard non-reveal path: 1% fee
-                refund = T.amount * 99 / 100;
-            }
+            require(block.timestamp > R.revealTs + GRACE_NONREVEAL, "grace");
+            uint256 refund = T.amount * 95 / 100;
             T.amount = 0;
             T.commit = bytes32(0);
             payable(msg.sender).transfer(refund);

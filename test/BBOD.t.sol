@@ -25,8 +25,9 @@ contract BBODFuzz is Test {
         strike = uint96(bound(strike, 0, 199));
 
         // create series
+        uint256 cap = strike + 50;
         vm.prank(address(this));
-        desk.create{value: 10 ether}(1, strike, block.timestamp + 1 hours, 100);
+        desk.create{value: 10 ether}(1, strike, cap, block.timestamp + 1 hours, 100);
 
         // buy option
         uint256 prem = desk.premium(strike, block.timestamp + 1 hours);

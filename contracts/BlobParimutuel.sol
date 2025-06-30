@@ -2,8 +2,9 @@
 pragma solidity ^0.8.23;
 import "./BaseBlobVault.sol";
 import "./IBlobBaseFee.sol";
+import "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
-contract BlobParimutuel is BaseBlobVault {
+contract BlobParimutuel is BaseBlobVault, ReentrancyGuard {
     struct Round {
         uint256 closeTs;
         uint256 hiPool;
@@ -23,6 +24,7 @@ contract BlobParimutuel is BaseBlobVault {
 
     event Bet(uint256 id,address user,bool hi,uint256 amt);
     event NewRound(uint256 id,uint256 close,uint256 thr);
+    event RefundAll(uint256 indexed id);
 
     modifier onlyOwner(){ require(msg.sender==owner,"!own"); _; }
 
@@ -45,25 +47,46 @@ contract BlobParimutuel is BaseBlobVault {
         emit Bet(cur,msg.sender,hi,msg.value);
     }
 
-    function settle() external {
+    function settle() external nonReentrant {
         Round storage r = rounds[cur];
         require(block.timestamp >= r.closeTs + 12, "grief guard");
         uint256 feeGwei = F.blobBaseFee();
-        bool hiWin = feeGwei >= r.thresholdGwei;
+        // store settle price early
+        r.settlePriceGwei = feeGwei;
 
         uint256 grossPool = r.hiPool + r.loPool;
+
+        // winner-less rescue
+        if (r.hiPool == 0 || r.loPool == 0) {
+            r.feeWei = 0; // no rake
+            emit RefundAll(cur);
+            _settle(feeGwei);
+            _open(r.thresholdGwei);
+            return;
+        }
+
         uint256 rake = grossPool * RAKE_BP / 10000;
         r.feeWei = rake;
+        // transfer rake after state write
         payable(owner).transfer(rake);
 
-        r.settlePriceGwei = feeGwei;
         _settle(feeGwei);
         _open(r.thresholdGwei);
     }
 
-    function claim(uint256 id) external {
+    function claim(uint256 id) external nonReentrant {
         Round storage r = rounds[id];
         require(r.settlePriceGwei != 0, "round unsettled");
+        // If winner-less round, everyone can refund 99.5 %
+        if (r.hiPool == 0 || r.loPool == 0) {
+            uint256 stake = hiBet[id][msg.sender] + loBet[id][msg.sender];
+            require(stake > 0, "none");
+            hiBet[id][msg.sender] = 0; loBet[id][msg.sender]=0;
+            uint256 refund = stake * 995 / 1000;
+            payable(msg.sender).transfer(refund);
+            return;
+        }
+
         bool hiWin = r.settlePriceGwei >= r.thresholdGwei;
         uint256 share = hiWin ? hiBet[id][msg.sender] : loBet[id][msg.sender];
         require(share>0, "none");

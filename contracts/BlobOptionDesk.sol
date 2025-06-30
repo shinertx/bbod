@@ -5,6 +5,7 @@ import "./IBlobBaseFee.sol";
 contract BlobOptionDesk {
     struct Series {
         uint256 strike;
+        uint256 cap;
         uint256 expiry;
         uint256 sold;
         uint256 payWei;
@@ -28,15 +29,18 @@ contract BlobOptionDesk {
     function create(
         uint256 id,
         uint256 strikeGwei,
+        uint256 capGwei,
         uint256 expiry,
         uint256 maxSold
     ) external payable {
         require(msg.sender == writer, "!w");
         require(series[id].strike == 0, "exists");
-        require(strikeGwei < 200, "strike too high");
-        uint256 maxPay = (200 - strikeGwei) * 1 gwei * maxSold;
+        require(capGwei > strikeGwei, "cap<=strike");
+        require(capGwei - strikeGwei <= 100, "cap too high");
+        uint256 maxPay = (capGwei - strikeGwei) * 1 gwei * maxSold;
+        require(maxPay <= 100 ether, "liability");
         require(msg.value >= maxPay, "insuff margin");
-        series[id] = Series(strikeGwei, expiry, 0, 0, msg.value);
+        series[id] = Series(strikeGwei, capGwei, expiry, 0, 0, msg.value);
     }
 
     function premium(uint256 strike, uint256 expiry) public view returns (uint256) {
@@ -63,6 +67,8 @@ contract BlobOptionDesk {
         require(block.timestamp >= s.expiry, "!exp");
         require(!seriesSettled[id], "series settled");
         uint256 fee = F.blobBaseFee();
+        uint256 cap = s.cap;
+        if (fee > cap) fee = cap;
         if (fee > s.strike) {
             s.payWei = (fee - s.strike) * 1 gwei;
         }
