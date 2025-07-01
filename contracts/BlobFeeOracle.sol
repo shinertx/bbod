@@ -2,8 +2,9 @@
 pragma solidity ^0.8.23;
 
 import "lib/openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
+import "lib/openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
 import "./IBlobBaseFee.sol";
-using ECDSA for bytes32;
+using MessageHashUtils for bytes32;
 
 /**
  * @title BlobFeeOracle
@@ -105,7 +106,7 @@ contract BlobFeeOracle is IBlobBaseFee {
 
         uint256 seen;
         for(uint256 i=0;i<sigs.length;i++){
-            address s = ECDSA.recover(ECDSA.toEthSignedMessageHash(h), sigs[i]);
+            address s = ECDSA.recover(h.toEthSignedMessageHash(), sigs[i]);
             require(isSigner[s], "!signer");
             uint256 idx = signerIndex[s];
             uint256 flag = 1 << idx;
