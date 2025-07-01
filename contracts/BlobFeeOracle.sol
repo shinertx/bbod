@@ -48,12 +48,6 @@ contract BlobFeeOracle is IBlobBaseFee {
     /// @dev Timestamp when `lastFee` was updated.
     uint256 public lastTs;
 
-    /// @dev Mapping slot => bit-mask of already cast votes.
-    mapping(uint256 => uint256) private voteMask;
-
-    /// @dev Mapping slot => running sum of fee observations.
-    mapping(uint256 => uint256) private feeSum;
-
     /// @dev Address of the timelock contract.
     address public immutable timelock;
 

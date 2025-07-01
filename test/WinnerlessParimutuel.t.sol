@@ -4,17 +4,23 @@ pragma solidity ^0.8.23;
 import "forge-std/Test.sol";
 import "../contracts/BlobParimutuel.sol";
 import "../contracts/BlobFeeOracle.sol";
+import "lib/openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
+
+using ECDSA for bytes32;
 
 contract WinnerlessParimutuel is Test {
     BlobParimutuel pm;
     BlobFeeOracle oracle;
     address bettor = address(0xBEEF);
     address[] signers;
+    uint256 private PK = 0xA11CE;
+    address private signer;
 
     receive() external payable {}
 
     function setUp() public {
-        signers.push(address(this));
+        signer = vm.addr(PK);
+        signers.push(signer);
         oracle = new BlobFeeOracle(signers, 1);
         pm = new BlobParimutuel(address(oracle));
     }
@@ -31,9 +37,13 @@ contract WinnerlessParimutuel is Test {
         uint256 close = _getClose();
         vm.warp(close + 13);
 
-        // push oracle fee lower than threshold so HI loses (makes winPool=0)
-        vm.prank(address(this));
-        oracle.push(1);
+        // produce signature for fee push
+        uint256 fee = 1;
+        bytes32 digest = keccak256(abi.encodePacked("BLOB_FEE", fee, block.timestamp/12));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest.toEthSignedMessageHash());
+        bytes[] memory sigs = new bytes[](1);
+        sigs[0] = abi.encodePacked(r, s, v);
+        oracle.push(fee, sigs);
 
         pm.settle();
 

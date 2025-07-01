@@ -4,17 +4,22 @@ pragma solidity ^0.8.23;
 import "forge-std/Test.sol";
 import "../contracts/BlobOptionDesk.sol";
 import "../contracts/BlobFeeOracle.sol";
+import "lib/openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
+using ECDSA for bytes32;
 
 contract CapSpikeOptionTest is Test {
     BlobOptionDesk desk;
     BlobFeeOracle oracle;
     address writer = address(this);
     address[] signers;
+    uint256 private PK = 0xA11CE;
+    address private signer;
 
     receive() external payable {}
 
     function setUp() public {
-        signers.push(address(this));
+        signer = vm.addr(PK);
+        signers.push(signer);
         oracle = new BlobFeeOracle(signers, 1);
         desk = new BlobOptionDesk(address(oracle));
     }
@@ -36,7 +41,12 @@ contract CapSpikeOptionTest is Test {
 
         // warp to expiry+1 and push fee above cap
         vm.warp(block.timestamp + 2);
-        oracle.push(200); // fee higher than cap
+        uint256 fee = 200;
+        bytes32 digest = keccak256(abi.encodePacked("BLOB_FEE", fee, block.timestamp/12));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest.toEthSignedMessageHash());
+        bytes[] memory sigs = new bytes[](1);
+        sigs[0] = abi.encodePacked(r, s, v);
+        oracle.push(fee, sigs); // fee higher than cap
 
         desk.settle(1);
         (,,, , uint256 payWei,,) = desk.series(1);
