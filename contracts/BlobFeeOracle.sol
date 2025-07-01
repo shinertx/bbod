@@ -105,7 +105,7 @@ contract BlobFeeOracle is IBlobBaseFee {
 
         uint256 seen;
         for(uint256 i=0;i<sigs.length;i++){
-            address s = ECDSA.recover(h.toEthSignedMessageHash(), sigs[i]);
+            address s = ECDSA.recover(ECDSA.toEthSignedMessageHash(h), sigs[i]);
             require(isSigner[s], "!signer");
             uint256 idx = signerIndex[s];
             uint256 flag = 1 << idx;
