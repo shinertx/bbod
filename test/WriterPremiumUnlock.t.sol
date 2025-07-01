@@ -7,6 +7,9 @@ import "../contracts/BlobOptionDesk.sol";
 contract WriterPremiumUnlock is Test {
     BlobOptionDesk desk;
 
+    // allow contract to receive ETH during test
+    receive() external payable {}
+
     function setUp() public {
         desk = new BlobOptionDesk(address(0));
     }
