@@ -45,7 +45,7 @@ contract BBODFuzz is Test {
         // time passes + oracle push
         vm.warp(block.timestamp + 1 hours + 1);
         // sign and push fee
-        bytes32 digest = keccak256(abi.encodePacked("BLOB_FEE", fee, block.timestamp/12));
+        bytes32 digest = keccak256(abi.encodePacked("BLOB_FEE", uint256(fee), block.timestamp/12));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest.toEthSignedMessageHash());
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = abi.encodePacked(r, s, v);

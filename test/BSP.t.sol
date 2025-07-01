@@ -47,7 +47,7 @@ contract BSPFuzz is Test {
         ( , , uint256 revealTs, , , , , , ) = pm.rounds(1);
         vm.warp(revealTs + 1);
 
-        bytes32 digest = keccak256(abi.encodePacked("BLOB_FEE", finalFee, block.timestamp/12));
+        bytes32 digest = keccak256(abi.encodePacked("BLOB_FEE", uint256(finalFee), block.timestamp/12));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest.toEthSignedMessageHash());
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = abi.encodePacked(r, s, v);
