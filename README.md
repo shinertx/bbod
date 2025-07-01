@@ -1,4 +1,4 @@
-# Blob Edge Stack
+# Blob Edge Stack bbod
 
 A small suite of contracts and helpers around Ethereum’s blob base fee.
 
@@ -62,8 +62,8 @@ _Example: `BlobParimutuel.sol` lines 32‑33._
 ### Clone the repo
 
 ```sh
-git clone https://github.com/you/blob-edge-stack
-cd blob-edge-stack
+git clone https://github.com/you/bbod
+cd bbod
 ```
 
 ### Prepare environment variables
