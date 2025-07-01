@@ -139,4 +139,13 @@ contract BlobParimutuel is BaseBlobVault, ReentrancyGuard {
         require(r.hiPool == 0 && r.loPool == 0, "bets placed");
         nextThresholdGwei = thr;
     }
+
+    /// @notice Collect stray wei that might accumulate due to rounding or refunds.
+    function sweepDust() external onlyOwner {
+        // allow only after current round is finished and a month has passed
+        require(block.timestamp > rounds[cur].closeTs + 30 days, "too-soon");
+        uint256 tracked = rounds[cur].hiPool + rounds[cur].loPool;
+        uint256 excess = address(this).balance > tracked ? address(this).balance - tracked : 0;
+        if (excess > 0) payable(owner).transfer(excess);
+    }
 } 

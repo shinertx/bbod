@@ -8,7 +8,10 @@ const PROVIDER = new ethers.JsonRpcProvider(process.env.RPC!);
 const wallet = new ethers.Wallet(process.env.PRIV!, PROVIDER);
 const bParimutuel = new ethers.Contract(
   process.env.BSP!,
-  ["function settle() external"],
+  [
+    "function settle() external",
+    "function setNextThreshold(uint256) external"
+  ],
   wallet
 );
 
@@ -32,11 +35,17 @@ async function blobFeeGwei(): Promise<number> {
 
     const hr = Math.floor(Date.now()/3600_000);
     if (hr !== lastHour) {
-      lastHour = hr;
       try {
-        const tx = await bParimutuel.settle({ gasLimit: 120000 });
+        const tx = await bParimutuel.settle({ gasLimit: 200_000 });
         console.log(`settle sent`, tx.hash);
-      } catch(e){ console.error(`settle fail`, e); }
+
+        // After a successful settlement, roll the threshold forward.
+        await (await bParimutuel.setNextThreshold(fee)).wait();
+
+        lastHour = hr; // update only on success
+      } catch (e) {
+        console.error("settle fail, retrying in 15s", e);
+      }
     }
     await new Promise(r=>setTimeout(r, 12_000));
   }

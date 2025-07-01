@@ -93,7 +93,7 @@ contract BlobFeeOracle is IBlobBaseFee {
     /// @param feeGwei Observed blob base fee in gwei (sanity-capped < 1000 gwei).
     function push(uint256 feeGwei) external onlySigner {
         require(!paused, "paused");
-        require(feeGwei < 1_000, "sanity");
+        require(feeGwei < 10_000, "sanity");
 
         uint256 slot = block.timestamp / 12; // 12-second slots – tolerate clock skew.
 

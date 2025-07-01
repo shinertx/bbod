@@ -20,8 +20,9 @@ contract BlobOptionDesk {
     mapping(uint256=>Series) public series;
     mapping(uint256=>bool) public seriesSettled;
     mapping(address=>mapping(uint256=>uint256)) public bal;
-    uint256 public writerPremiumEscrow;
-    mapping(uint256 => uint256) public premiumUnlock; // per-series earliest premium withdrawal time
+    // Per-series premium escrow pot and unlock timestamp.
+    mapping(uint256 => uint256) public premCollected;
+    mapping(uint256 => uint256) public unlockTs;
 
     // Events
     event PayCapped(uint256 indexed id, uint256 rawWei, uint256 capWei);
@@ -74,12 +75,10 @@ contract BlobOptionDesk {
         require(s.sold + qty <= s.maxSold, "oversell");
         s.sold += qty;
         bal[msg.sender][id] += qty;
-        writerPremiumEscrow += msg.value;
 
-        // start unlock timer once first premium arrives for this series
-        if (premiumUnlock[id] == 0) {
-            premiumUnlock[id] = block.timestamp + 2 hours;
-        }
+        // add to series-level premium pot & (re)start 1h escrow timer
+        premCollected[id] += msg.value;
+        unlockTs[id] = block.timestamp + 1 hours;
     }
 
     function settle(uint256 id) external {
@@ -138,25 +137,25 @@ contract BlobOptionDesk {
         payable(writer).transfer(amt);
     }
 
-    uint256 public constant GRACE_PERIOD = 7 days;
+    uint256 public constant GRACE_PERIOD = 6 hours;
 
     /// @notice sweep remaining margin after all exercises or timeout
     function sweepMargin(uint256 id) external {
         Series storage s = series[id];
         require(seriesSettled[id], "unsettled");
         require(s.margin > 0, "none");
-        require(s.sold == 0 || block.timestamp > s.expiry + GRACE_PERIOD, "open");
+        require(s.sold == 0 || block.timestamp > s.expiry + GRACE_PERIOD, "pending");
         uint256 amt = s.margin;
         s.margin = 0;
         payable(writer).transfer(amt);
     }
 
-    /// @notice Withdraw all accumulated premiums once any series-level lock expires.
-    function withdrawPremiums(uint256 id) external {
+    /// @notice Withdraw unlocked premiums for a single series.
+    function withdrawPremium(uint256 id) external {
         require(msg.sender == writer, "!w");
-        require(block.timestamp >= premiumUnlock[id], "locked");
-        uint256 amt = writerPremiumEscrow;
-        writerPremiumEscrow = 0;
+        require(block.timestamp >= unlockTs[id], "escrow");
+        uint256 amt = premCollected[id];
+        premCollected[id] = 0;
         payable(writer).transfer(amt);
     }
 
