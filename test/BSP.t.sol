@@ -4,7 +4,9 @@ import "forge-std/Test.sol";
 import "../contracts/CommitRevealBSP.sol";
 import "../contracts/BlobFeeOracle.sol";
 import "lib/openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
+import "lib/openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
 using ECDSA for bytes32;
+using MessageHashUtils for bytes32;
 
 contract BSPFuzz is Test {
     CommitRevealBSP pm;
