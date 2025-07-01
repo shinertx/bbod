@@ -55,6 +55,7 @@ contract CommitRevealBSP is ReentrancyGuard {
     IBlobBaseFee public immutable F;
 
     uint16 public constant RAKE_BP = 500; // 5%
+    uint256 public constant MIN_BET = 0.01 ether;
     uint256 public constant GRACE_NONREVEAL = 15 minutes;
 
     mapping(uint256 => mapping(address => Ticket)) public tickets; // round -> user -> ticket
@@ -87,6 +88,7 @@ contract CommitRevealBSP is ReentrancyGuard {
     function commit(bytes32 h) external payable {
         Round storage R = rounds[cur];
         require(block.timestamp < R.closeTs, "closed");
+        require(msg.value >= MIN_BET, "dust");
         require(tickets[cur][msg.sender].commit == 0, "dup");
 
         tickets[cur][msg.sender] = Ticket({commit: h, amount: msg.value});
@@ -171,8 +173,15 @@ contract CommitRevealBSP is ReentrancyGuard {
             // Non-revealed ticket – allow refund after grace
             require(block.timestamp > R.revealTs + GRACE_NONREVEAL, "grace");
             uint256 refund = T.amount * 95 / 100;
-            T.amount = 0;
-            T.commit = bytes32(0);
+            uint256 burn   = T.amount - refund; // 5%
+            if (R.hiPool == 0 && R.loPool == 0) {
+                // before settlement, we don't yet know side; add to hiPool
+                R.hiPool += burn;
+            } else {
+                // after settlement, burn into total pool via owner rake
+                payable(owner).transfer(burn);
+            }
+            delete tickets[id][msg.sender];
             payable(msg.sender).transfer(refund);
             emit Refund(id, msg.sender, refund);
         }

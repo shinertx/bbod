@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 import "./IBlobBaseFee.sol";
+import "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
-contract BlobOptionDesk {
+contract BlobOptionDesk is ReentrancyGuard {
     struct Series {
         uint256 strike;
         uint256 cap;
@@ -78,10 +79,12 @@ contract BlobOptionDesk {
 
         // add to series-level premium pot & (re)start 1h escrow timer
         premCollected[id] += msg.value;
-        unlockTs[id] = block.timestamp + 1 hours;
+        if (unlockTs[id] == 0) {
+            unlockTs[id] = block.timestamp + 1 hours;
+        }
     }
 
-    function settle(uint256 id) external {
+    function settle(uint256 id) external nonReentrant {
         Series storage s = series[id];
         require(block.timestamp >= s.expiry, "!exp");
         require(!seriesSettled[id], "series settled");
@@ -95,14 +98,15 @@ contract BlobOptionDesk {
             emit PayCapped(id, rawPay, maxPayPerOpt);
         }
 
-        // bounty to caller
+        // bounty to caller (post state update to avoid revert grief)
         uint256 bounty = address(this).balance * SETTLE_BOUNTY_BP / 10_000;
+
+        seriesSettled[id] = true;
+
         if (bounty > 0) {
             payable(msg.sender).transfer(bounty);
             emit SettleBounty(id, msg.sender, bounty);
         }
-
-        seriesSettled[id] = true;
 
         if (s.payWei == 0 && msg.sender == writer) {
             uint256 refund = s.margin;

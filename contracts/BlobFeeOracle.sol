@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
+import "lib/openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
 import "./IBlobBaseFee.sol";
+using ECDSA for bytes32;
 
 /**
  * @title BlobFeeOracle
@@ -33,8 +35,12 @@ contract BlobFeeOracle is IBlobBaseFee {
     /// @dev Immutable list of authorised signers.
     address[] public signers;
 
-    /// @dev Number of required signatures for a slot to be considered final.
-    uint256 public quorum; // e.g. 3-of-N
+    /// @dev Minimal number of unique signer signatures required (>50 % of signer set).
+    uint256 public minSigners;
+
+    /// @dev Quick lookup for authorised signer.
+    mapping(address => uint256) private signerIndex;
+    mapping(address => bool)    public isSigner;
 
     /// @dev Last canonical fee (gwei) that reached quorum.
     uint256 public lastFee;
@@ -62,10 +68,14 @@ contract BlobFeeOracle is IBlobBaseFee {
     /// @param _quorum   Required number of signatures to finalise a slot.
     constructor(address[] memory _signers, uint256 _quorum) {
         require(_signers.length > 0 && _signers.length <= 256, "bad signers");
-        require(_quorum > 0 && _quorum <= _signers.length, "bad quorum");
+        require(_quorum > _signers.length/2, "quorum<50%");
 
         signers = _signers;
-        quorum  = _quorum;
+        minSigners = _quorum;
+        for(uint256 i=0;i<_signers.length;i++){
+            signerIndex[_signers[i]] = i;
+            isSigner[_signers[i]] = true;
+        }
         timelock = msg.sender; // deployer becomes timelock
     }
 
@@ -89,40 +99,32 @@ contract BlobFeeOracle is IBlobBaseFee {
                                EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Push a new fee observation for the current 12-second slot.
-    /// @param feeGwei Observed blob base fee in gwei (sanity-capped < 1000 gwei).
-    function push(uint256 feeGwei) external onlySigner {
+    /// @notice Push new observation – uses off-chain ECDSA aggregation.  Caller
+    ///         supplies fee value and the concatenated signatures from ≥minSigners.
+    function push(uint256 feeGwei, bytes[] calldata sigs) external {
         require(!paused, "paused");
-        require(feeGwei < 10_000, "sanity");
+        require(feeGwei < 10_000, "fee-out-of-range");
 
-        uint256 slot = block.timestamp / 12; // 12-second slots – tolerate clock skew.
+        // message = keccak256("BLOB_FEE", fee, slot)
+        uint256 slot = block.timestamp / 12;
+        bytes32 h = keccak256(abi.encodePacked("BLOB_FEE", feeGwei, slot));
 
-        // Derive index of signer in the array.  We iterate only once because the
-        // signer set is expected to be small (<10).
-        uint256 signerIdx;
-        for (uint256 i = 0; i < signers.length; i++) {
-            if (msg.sender == signers[i]) {
-                signerIdx = i;
-                break;
-            }
+        uint256 seen;
+        for(uint256 i=0;i<sigs.length;i++){
+            address s = ECDSA.recover(h.toEthSignedMessageHash(), sigs[i]);
+            require(isSigner[s], "!signer");
+            uint256 idx = signerIndex[s];
+            uint256 flag = 1 << idx;
+            require(seen & flag == 0, "dup");
+            seen |= flag;
         }
+        require(_popcount(seen) >= minSigners, "quorum");
 
-        // Ensure the signer has not already voted in this slot.
-        uint256 mask = voteMask[slot];
-        uint256 flag = 1 << signerIdx; // safe because signerIdx < 256
-        require(mask & flag == 0, "dup");
-
-        // Update vote bit-mask and cumulative sum.
-        voteMask[slot] = mask | flag;
-        feeSum[slot] += feeGwei;
-
-        // Finalise once quorum reached.
-        uint256 count = _popcount(voteMask[slot]);
-        if (count >= quorum) {
-            lastFee = feeSum[slot] / count; // arithmetic mean in gwei
-            lastTs  = block.timestamp;
-            emit NewFee(lastFee);
-        }
+        // simple EMA smoothing across 4 slots to make manipulation pricey.
+        if (lastFee == 0) lastFee = feeGwei;
+        else lastFee = (lastFee * 3 + feeGwei) / 4;
+        lastTs = block.timestamp;
+        emit NewFee(lastFee);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -147,7 +149,7 @@ contract BlobFeeOracle is IBlobBaseFee {
     //////////////////////////////////////////////////////////////////////////*/
 
     address[] private pendingSigners;
-    uint256  private pendingQuorum;
+    uint256  private pendingMinSigners;
     uint256  private readyTs;
     uint256  public constant UPGRADE_DELAY = 48 hours;
 
@@ -157,7 +159,7 @@ contract BlobFeeOracle is IBlobBaseFee {
         require(_q>0 && _q<=_new.length, "q");
         delete pendingSigners;
         for(uint i=0;i<_new.length;i++) pendingSigners.push(_new[i]);
-        pendingQuorum = _q;
+        pendingMinSigners = _q;
         readyTs = block.timestamp + UPGRADE_DELAY;
     }
 
@@ -165,7 +167,12 @@ contract BlobFeeOracle is IBlobBaseFee {
         require(msg.sender == timelock, "!tl");
         require(readyTs!=0 && block.timestamp>=readyTs, "too early");
         signers = pendingSigners;
-        quorum  = pendingQuorum;
+        minSigners = pendingMinSigners;
+        for(uint256 i=0;i<pendingSigners.length;i++){
+            address s = pendingSigners[i];
+            signerIndex[s] = i;
+            isSigner[s] = true;
+        }
         delete readyTs;
     }
 
