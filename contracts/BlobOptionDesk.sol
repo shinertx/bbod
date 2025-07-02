@@ -34,6 +34,11 @@ contract BlobOptionDesk is ReentrancyGuard {
         F = IBlobBaseFee(feeOracle);
     }
 
+    function setK(uint256 newK) external {
+        require(msg.sender == writer, "!auth");
+        k = newK;
+    }
+
     function create(
         uint256 id,
         uint256 strikeGwei,
@@ -62,7 +67,9 @@ contract BlobOptionDesk is ReentrancyGuard {
     function premium(uint256 strike, uint256 expiry) public view returns (uint256) {
         uint256 T = expiry - block.timestamp;
         uint256 sigma = 12e9;
-        return k * sigma * sqrt(T * 1e18 / 3600) / 1e18;
+        uint256 timePrem = k * sigma * sqrt(T * 1e18 / 3600) / 1e18;
+        uint256 intrinsic = F.blobBaseFee() > strike ? (F.blobBaseFee() - strike) * 1 gwei : 0;
+        return timePrem > intrinsic ? timePrem : intrinsic;
     }
     function sqrt(uint256 y) internal pure returns (uint256 z) {
         if (y > 3) { z = y; uint256 x = y/2+1; while (x < z){ z=x; x=(y/x + x)/2; }} else if (y!=0) z = 1;
@@ -70,7 +77,7 @@ contract BlobOptionDesk is ReentrancyGuard {
 
     function buy(uint256 id, uint256 qty) external payable {
         Series storage s = series[id];
-        require(block.timestamp < s.expiry, "exp");
+        require(block.timestamp + 300 < s.expiry, "too-late-to-buy");
         uint256 p = premium(s.strike, s.expiry);
         require(msg.value == p * qty, "!prem");
         require(s.sold + qty <= s.maxSold, "oversell");
@@ -129,12 +136,18 @@ contract BlobOptionDesk is ReentrancyGuard {
         payable(msg.sender).transfer(due);
     }
 
-    /// @notice withdraw margin for OTM series after settlement
+    /// @notice Withdraw writer margin once a series is settled.
+    ///         If the series expired out-of-the-money the margin can be
+    ///         reclaimed immediately.  For in-the-money expiries the writer
+    ///         must wait one day to give holders time to exercise.
     function withdrawMargin(uint256 id) external {
         Series storage s = series[id];
         require(msg.sender == writer, "!w");
         require(seriesSettled[id], "unsettled");
-        require(s.payWei == 0, "ITM");
+        require(
+            s.payWei == 0 || block.timestamp > s.expiry + 1 days,
+            "grace"
+        );
         uint256 amt = s.margin;
         require(amt > 0, "none");
         s.margin = 0;

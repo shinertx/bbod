@@ -43,6 +43,9 @@ contract BlobFeeOracle is IBlobBaseFee {
     mapping(address => uint256) private signerIndex;
     mapping(address => bool)    public isSigner;
 
+    /// @dev Track if a slot already finalised.
+    mapping(uint256 => bool) public slotPushed;
+
     /// @dev Last canonical fee (gwei) that reached quorum.
     uint256 public lastFee;
 
@@ -54,6 +57,9 @@ contract BlobFeeOracle is IBlobBaseFee {
 
     /// @dev Boolean indicating whether the contract is paused.
     bool public paused;
+
+    /// @dev Allow manual override if oracle is inactive for a long period.
+    uint256 public constant OVERRIDE_DELAY = 7200; // slots (~1 day)
 
     /*//////////////////////////////////////////////////////////////////////////
                                    CONSTRUCTOR
@@ -102,6 +108,8 @@ contract BlobFeeOracle is IBlobBaseFee {
 
         // message = keccak256("BLOB_FEE", fee, slot)
         uint256 slot = block.timestamp / 12;
+        require(!slotPushed[slot], "already-pushed");
+        slotPushed[slot] = true;
         bytes32 h = keccak256(abi.encodePacked("BLOB_FEE", feeGwei, slot));
 
         uint256 seen;
@@ -171,5 +179,18 @@ contract BlobFeeOracle is IBlobBaseFee {
         delete readyTs;
     }
 
+    /// @notice Manually set the fee if signers are inactive for too long.
+    /// @dev Allows timelock to unblock the system after ~1 day without pushes.
+    function overrideFee(uint256 slot, uint256 feeGwei) external {
+        require(msg.sender == timelock, "!tl");
+        require(block.timestamp / 12 >= slot + OVERRIDE_DELAY, "active");
+        require(!slotPushed[slot], "already-pushed");
+        slotPushed[slot] = true;
+        require(feeGwei < 10_000, "fee-out-of-range");
+        lastFee = feeGwei;
+        lastTs = block.timestamp;
+        emit NewFee(feeGwei);
+    }
+
     function pause(bool p) external { require(msg.sender==timelock, "!tl"); paused=p; }
-} 
+}
