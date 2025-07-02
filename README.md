@@ -1,10 +1,5 @@
-Of course. Here is the complete, rewritten `README.md` file. It is designed to be a definitive, easy-to-follow guide for any developer, incorporating all the corrections and best practices we've discussed.
-
-This should be the final version you need.
-
------
-
 # Blob Edge Stack
+
 
 A decentralized derivatives suite for hedging and speculating on Ethereum's EIP-4844 blob gas fees.
 
@@ -49,7 +44,7 @@ git clone https://github.com/shinertx/bbod.git
 cd bbod
 git submodule update --init
 cp .env.example .env
-# --> Fill in your RPC_URL and a burner PRIV_UINT in .env
+# --> Fill in your RPC and a burner PRIV in .env
 
 # 2. Install Dependencies
 npm install -g pnpm
@@ -58,7 +53,7 @@ pnpm --prefix frontend install
 
 # 3. Test & Deploy to Fork
 forge test -vv --root .
-source .env && forge script script/Deploy.s.sol --fork-url $RPC_URL --broadcast --root .
+source .env && forge script script/Deploy.s.sol --fork-url $RPC --broadcast --root .
 # --> Copy the deployed BSP & ORACLE addresses and add them to your .env file
 
 # 4. Run the Full Stack
@@ -104,7 +99,7 @@ forge install
 
 # Create and fill out your secret .env file
 cp .env.example .env
-nano .env # <-- Add your RPC_URL and burner wallet private keys (PRIV and PRIV_UINT)
+nano .env # <-- Add your RPC and burner wallet private keys (PRIV)
 ```
 
 -----
@@ -125,7 +120,7 @@ forge test -vv --root .
 source .env
 
 # Deploy to a temporary mainnet fork for testing
-forge script script/Deploy.s.sol --fork-url $RPC_URL --broadcast --root .
+forge script script/Deploy.s.sol --fork-url $RPC --broadcast --root .
 
 # Deploy to a live network (e.g., Mainnet or Sepolia)
 # forge script script/Deploy.s.sol --rpc-url $YOUR_NETWORK_RPC --broadcast --private-key $YOUR_DEPLOYER_PRIV --root .
