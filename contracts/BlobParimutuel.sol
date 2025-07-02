@@ -120,7 +120,6 @@ contract BlobParimutuel is BaseBlobVault, ReentrancyGuard {
     }
 
     function _open(uint256 thrFallback) internal {
-        settled = false;
         cur += 1;
         uint256 thr = nextThresholdGwei != 0 ? nextThresholdGwei : thrFallback;
         // clear for subsequent rounds

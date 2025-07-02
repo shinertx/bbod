@@ -170,20 +170,12 @@ contract CommitRevealBSP is ReentrancyGuard {
                 _payout(id, msg.sender, side, salt);
             }
         } else {
-            // Non-revealed ticket – allow refund after grace
+            // Non-revealed ticket forfeits full stake to house after grace
             require(block.timestamp > R.revealTs + GRACE_NONREVEAL, "grace");
-            uint256 refund = T.amount * 95 / 100;
-            uint256 burn   = T.amount - refund; // 5%
-            if (R.hiPool == 0 && R.loPool == 0) {
-                // before settlement, we don't yet know side; add to hiPool
-                R.hiPool += burn;
-            } else {
-                // after settlement, burn into total pool via owner rake
-                payable(owner).transfer(burn);
-            }
+            uint256 burn = T.amount;
             delete tickets[id][msg.sender];
-            payable(msg.sender).transfer(refund);
-            emit Refund(id, msg.sender, refund);
+            payable(owner).transfer(burn);
+            emit Refund(id, msg.sender, 0);
         }
     }
 
@@ -216,7 +208,17 @@ contract CommitRevealBSP is ReentrancyGuard {
 
     /// @notice Owner may adjust threshold for *next* round.
     function setNextThreshold(uint256 thr) external onlyOwner {
+        require(rounds[cur].hiPool == 0 && rounds[cur].loPool == 0, "bets placed");
         rounds[cur].thresholdGwei = thr;
+    }
+
+    /// @notice Sweep accumulated dust after settlement and long inactivity.
+    function sweepDust(uint256 roundId) external onlyOwner {
+        Round storage R = rounds[roundId];
+        require(R.settled && block.timestamp > R.revealTs + 30 days, "too-soon");
+        uint256 tracked = R.hiPool + R.loPool;
+        uint256 excess = address(this).balance > tracked ? address(this).balance - tracked : 0;
+        if (excess > 0) payable(owner).transfer(excess);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
