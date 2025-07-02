@@ -54,7 +54,7 @@ pnpm --prefix frontend install
 # 3. Test & Deploy to Fork
 forge test -vv --root .
 source .env && forge script script/Deploy.s.sol --fork-url $RPC --broadcast --root .
-# --> Copy the deployed BSP & ORACLE addresses and add them to your .env file
+# --> Copy the deployed BBOD, BSP, and ORACLE addresses and add them to your .env file
 
 # 4. Run the Full Stack
 npm run ws &    # Start WebSocket bridge in background
@@ -126,7 +126,7 @@ forge script script/Deploy.s.sol --fork-url $RPC --broadcast --root .
 # forge script script/Deploy.s.sol --rpc-url $YOUR_NETWORK_RPC --broadcast --private-key $YOUR_DEPLOYER_PRIV --root .
 ```
 
-After deployment, copy the `BSP` and `BLOB_ORACLE` contract addresses printed in the logs and add them to your `.env` file.
+After deployment, copy the `BBOD`, `BSP`, and `ORACLE` contract addresses printed in the logs and add them to your `.env` file.
 
 ### 2\. Run Services
 
