@@ -1,161 +1,151 @@
-# Blob Edge Stack
+# Blob Edge Stack (BBOD + BSP)
+
+Blob Edge Stack is a decentralized derivatives suite built around Ethereum's EIP-4844 blob base fee. It contains two main on-chain systems and a collection of off-chain bots and daemons:
+
+* **BBOD** – `EscrowedSeriesOptionDesk`: fully collateralized options on future blob fees.
+* **BSP** – `BlobParimutuel`: hourly betting market with permissionless settlement.
+* **BlobFeeOracle** – lightweight push oracle for blob fee observations.
+
+The repository also ships monitoring and automation tools for production deployment.
+
+---
+
+## Repository Layout
+
+- **`contracts/`** – Solidity contracts for the oracle, option desk and parimutuel vaults.
+- **`daemon/`** – Off-chain TypeScript services: `blobDaemon.ts` to fetch blob fees and settle BSP rounds, and `wsBridge.ts` to relay Redis pub/sub messages to WebSocket clients.
+- **`bots/`** – Operational keepers and market bots:
+  - `feedA.ts` / `feedB.ts` – oracle feeders to push the blob fee every 12 s.
+  - `ivBot.ts` – placeholder implied-volatility updater for BBOD.
+  - `seedBot.ts` – opens option series and seeds pools with small stakes.
+  - `settleBot.ts` – permissionless fallback for settling BSP rounds.
+  - `thresholdBot.ts` – automatically adjusts the BSP threshold from recent fees.
+- **`script/`** – Forge deployment script `Deploy.s.sol` plus helper scripts (`settle.ts`, `flashBundle.ts`).
+- **`test/`** – Foundry test suite covering edge cases and fuzz scenarios.
+- **`frontend/`** – Minimal Next.js dashboard for live metrics.
+- **`docker/`** – Example compose file for Prometheus/Grafana monitoring.
+
+---
+
+## Contracts Overview
+
+| Contract | Purpose |
+|---------|---------|
+| `BlobFeeOracle` | 3-of-N push oracle storing the blob base fee once enough feeders agree. |
+| `EscrowedSeriesOptionDesk` | Writer-funded call options with per-series collateral buckets. |
+| `BlobOptionDesk` | Legacy option desk used in tests; demonstrates fixed pricing. |
+| `BlobParimutuel` | Hourly parimutuel market with permissionless settlement. |
+| `BaseBlobVault` | Shared event helpers for settlement. |
+| `IBlobBaseFee` | Interface used by both BBOD and BSP to query the fee. |
 
 
-A decentralized derivatives suite for hedging and speculating on Ethereum's EIP-4844 blob gas fees.
+## Environment Variables
 
-This repository implements two core primitives: a fixed-strike options desk (**BBOD**) and a parimutuel betting pool (**BSP**), both powered by a shared, decentralized oracle for the `BLOBBASEFEE`.
+Create a `.env` file (see `.env.example`) and populate the following variables:
 
------
+| Name | Purpose |
+|------|---------|
+| `RPC` | RPC URL used by bots and tests |
+| `PRIV` | Private key for deployments and bot accounts |
+| `ORACLE` | Address of the deployed `BlobFeeOracle` |
+| `BLOB_ORACLE` | Same as `ORACLE` for forge scripts |
+| `BSP` | Address of the deployed `BlobParimutuel` |
+| `BBOD` | Address of the deployed `EscrowedSeriesOptionDesk` |
+| `REDIS` | Redis connection string (for daemon and WebSocket bridge) |
+| `BEACON` | Fallback beacon API endpoint for blob fees |
+| `WS_PORT` | Port for the local WebSocket bridge |
+| `METRICS_PORT` | Port to expose Prometheus metrics |
 
-## Overview
-
-  * **`contracts/`**: Audited, production-ready smart contracts for the oracle, options desk, and parimutuel system.
-  * **`daemon/`**: Off-chain services for fetching blob fees and relaying data to the frontend.
-  * **`bots/`**: The operational "brain" of the protocol for automated settlement, market-making, and risk management.
-  * **`test/`**: A comprehensive Foundry test suite, including unit and fuzz tests.
-  * **`script/`**: Deployment and operational scripts.
-  * **`frontend/`**: A minimal Next.js UI for monitoring the live system.
-
------
-
-## Core Concepts
-
-This protocol allows users to take two primary positions on the future price of blob space:
-
-1.  **Hedging with `EscrowedSeriesOptionDesk` (BBOD)**
-
-      * **What it is:** An insurance market. Users (like L2 rollups) can pay a small upfront fee (a *premium*) to buy a call option. This option pays out if the blob fee spikes above a certain *strike price*, effectively capping their maximum data posting costs.
-      * **Purpose:** To manage risk.
-
-2.  **Speculating with `CommitRevealBSP` (BSP)**
-
-      * **What it is:** A fast-paced betting arena. Users place bets on whether the blob fee will be "High" or "Low" relative to a set threshold within an hourly window.
-      * **Purpose:** To profit from short-term volatility.
-
------
-
-## Quick Start
-
-This guide gets an experienced developer from a fresh clone to a running test environment on a mainnet fork in under 10 minutes.
-
-```bash
-# 1. Clone & Initialize
-git clone https://github.com/shinertx/bbod.git
-cd bbod
-git submodule update --init
-cp .env.example .env
-# --> Fill in your RPC and a burner PRIV in .env
-
-# 2. Install Dependencies
-npm install -g pnpm
-pnpm install
-pnpm --prefix frontend install
-
-# 3. Test & Deploy to Fork
-forge test -vv --root .
-source .env && forge script script/Deploy.s.sol --fork-url $RPC --broadcast --root .
-# --> Copy the deployed BSP & ORACLE addresses and add them to your .env file
-
-# 4. Run the Full Stack
-npm run ws &    # Start WebSocket bridge in background
-npm run daemon &  # Start settlement daemon in background
-npm run frontend  # Start the UI
-```
-
------
-
-## Detailed Setup Guide
-
-Follow these steps for a complete, clean setup in an environment like Google Cloud Shell.
-
-### 1\. Prepare Environment
+Example:
 
 ```bash
-# Install Foundry (for Solidity)
-curl -L https://foundry.paradigm.xyz | bash
-foundryup
-
-# Install PNPM (for the frontend)
-npm install -g pnpm
-
-# Install and start Redis Server
-sudo apt-get update && sudo apt-get install -y redis-server
-sudo redis-server /etc/redis/redis.conf --daemonize yes
-redis-cli ping  # <-- Must respond with PONG
+RPC=https://mainnet.infura.io/v3/YOUR_KEY
+PRIV=0xYOUR_PRIVATE_KEY
+ORACLE=0xORACLE_ADDRESS
+BLOB_ORACLE=0xORACLE_ADDRESS
+BSP=0xBSP_ADDRESS
+BBOD=0xBBOD_ADDRESS
+REDIS=redis://localhost:6379
+BEACON=http://localhost:5052/eth/v1/debug/beacon/blob_fee
+WS_PORT=6380
+METRICS_PORT=9464
 ```
 
-### 2\. Configure Project
+---
 
-```bash
-# Clone the repository and its submodules
-git clone https://github.com/shinertx/bbod.git
-cd bbod
-git submodule update --init
+## Setup
 
-# Install all project dependencies
-pnpm install
-pnpm --prefix frontend install
-forge install
+1. **Clone the repo and submodules**
+   ```bash
+   git clone https://github.com/shinertx/bbod.git
+   cd bbod
+   git submodule update --init
+   cp .env.example .env  # edit with your values
+   ```
+2. **Install dependencies**
+   ```bash
+   npm install -g pnpm
+   pnpm install
+   pnpm --prefix frontend install
+   ```
+3. **Run tests** (requires Foundry)
+   ```bash
+   forge test -vv
+   ```
+4. **Deploy contracts**
+   ```bash
+   source .env
+   forge script script/Deploy.s.sol --fork-url $RPC --broadcast
+   # record the BBOD/BSP/oracle addresses and update .env
+   ```
+5. **Start daemons/bots**
+   ```bash
+   pnpm ts-node daemon/wsBridge.ts
+   pnpm ts-node daemon/blobDaemon.ts
+   pnpm ts-node bots/feedA.ts         # run on multiple machines for liveness
+   pnpm ts-node bots/feedB.ts         # second feed instance
+   pnpm ts-node bots/thresholdBot.ts
+   pnpm ts-node bots/settleBot.ts
+   pnpm ts-node bots/seedBot.ts
+   ```
 
-# Create and fill out your secret .env file
-cp .env.example .env
-nano .env # <-- Add your RPC and burner wallet private keys (PRIV)
-```
+---
 
------
+## Production Notes
 
-## Operational Flow
+For a resilient deployment run at least two feed bots (on different providers) so the oracle continues pushing data if one fails. Keep the `settleBot` and `thresholdBot` online to ensure BSP rounds progress and thresholds track the market. Use `docker-compose` to start Prometheus and Grafana for monitoring. Expose metrics from bots via `METRICS_PORT` and add alerts for stalled feeds or missed settlements.
 
-This is the correct sequence for deploying and running the live stack.
+All contracts are permissionless once deployed but rely on timely feeds to remain safe. The oracle can be overridden via timelock only if signers stop pushing for a full day. Carefully manage private keys and RPC reliability to avoid stuck rounds.
 
-### 1\. Deploy Contracts
+**Risk Warning:** Options and parimutuel betting are inherently risky. Smart contract bugs, oracle failures or extreme volatility could lead to loss of funds. Run extensive tests on a fork before using real value.
 
-First, confirm your tests pass. Then, load your secrets and run the deployment script.
+---
 
-```bash
-# Run the full test suite
-forge test -vv --root .
+## FAQ & Troubleshooting
 
-# Load secrets into your terminal session
-source .env
+**Q:** Tests fail with `forge: command not found`
+**A:** Install Foundry (`curl -L https://foundry.paradigm.xyz | bash && foundryup`).
 
-# Deploy to a temporary mainnet fork for testing
-forge script script/Deploy.s.sol --fork-url $RPC --broadcast --root .
+**Q:** Bots cannot connect to Redis.
+**A:** Check that Redis is running and `REDIS` in `.env` points to the correct host.
 
-# Deploy to a live network (e.g., Mainnet or Sepolia)
-# forge script script/Deploy.s.sol --rpc-url $YOUR_NETWORK_RPC --broadcast --private-key $YOUR_DEPLOYER_PRIV --root .
-```
+**Q:** `forge script` cannot find `BLOB_ORACLE`.
+**A:** Ensure the oracle address is set in `.env` as both `ORACLE` and `BLOB_ORACLE` before running the deploy script.
 
-After deployment, copy the `BSP` and `BLOB_ORACLE` contract addresses printed in the logs and add them to your `.env` file.
+**Q:** The UI shows no data.
+**A:** Confirm the WebSocket bridge (`wsBridge.ts`) is running and that feed bots are publishing fees to Redis.
 
-### 2\. Run Services
+---
 
-You need three services running concurrently. The easiest way is to use three separate terminals or a tool like `tmux`.
+## Contributing
 
-  * **Terminal 1 (Bridge):** `npm run ws`
-  * **Terminal 2 (Daemon):** `source .env && npm run daemon`
-  * **Terminal 3 (Frontend):** `npm run frontend`
+1. Fork the repository and create a feature branch.
+2. Follow the guidelines in `AGENTS.md` – all changes must pass `forge test -vv` and any lint/format checks.
+3. Submit a pull request with a clear description of your changes and test evidence.
+4. Maintain backward compatibility when touching on-chain code and document any new parameters or risks.
 
-### 3\. View the UI
-
-Navigate to `http://localhost:3000` in your web browser. You should see the live blob fee updating in real-time.
-
------
-
-## Commands Reference
-
-| Command / Script | What it does |
-| :--- | :--- |
-| `pnpm install` | Install Node dependencies. |
-| `pnpm --prefix frontend install` | Install frontend dependencies. |
-| `forge test -vv` | Run the full Solidity test suite. |
-| `forge script script/Deploy.s.sol ...` | Deploy the full suite of contracts. |
-| `npm run daemon` | Starts the daemon to settle rounds and manage the protocol. |
-| `npm run ws` | Starts the WebSocket bridge for the frontend UI. |
-| `npm run frontend` | Starts the Next.js UI for local development. |
-
------
+---
 
 ## License
 
-This project is released under the MIT License. See individual file headers for SPDX identifiers.
+This project is licensed under the MIT License. See each file for its SPDX identifier.
