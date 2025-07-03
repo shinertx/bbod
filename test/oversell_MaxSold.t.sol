@@ -29,7 +29,7 @@ contract OversellMaxSoldTest is Test {
         desk.buy{value: prem}(1, 1);
 
         // Attempt to buy a second option should revert
-        vm.expectRevert("oversell");
+        vm.expectRevert("maxSold exceeded");
         desk.buy{value: prem}(1, 1);
     }
 } 
