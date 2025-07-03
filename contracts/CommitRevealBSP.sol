@@ -32,6 +32,7 @@ contract CommitRevealBSP is ReentrancyGuard {
         uint256 rake;
         uint256 thresholdGwei;
         uint256 feeResult; // oracle fee for the round (gwei)
+        uint256 settlePriceGwei;
         bool settled;
     }
 
@@ -60,6 +61,9 @@ contract CommitRevealBSP is ReentrancyGuard {
 
     mapping(uint256 => mapping(address => Ticket)) public tickets; // round -> user -> ticket
     mapping(uint256 => Round) public rounds;                       // round -> round data
+
+    bytes32  public thresholdCommit;
+    uint256  public commitRound; // round the commit applies to
 
     /*//////////////////////////////////////////////////////////////////////////
                                    CONSTRUCTOR
@@ -125,6 +129,7 @@ contract CommitRevealBSP is ReentrancyGuard {
 
         uint256 feeGwei = F.blobBaseFee();
         R.feeResult = feeGwei;
+        R.settlePriceGwei = feeGwei;
         R.settled = true;
 
         uint256 gross = R.hiPool + R.loPool;
@@ -133,7 +138,7 @@ contract CommitRevealBSP is ReentrancyGuard {
         if (R.hiPool == 0 || R.loPool == 0) {
             R.rake = 0;
             emit Settled(cur, feeGwei, 0);
-            _open(R.thresholdGwei);
+            _open(0);
             return; // early exit – claim() will refund bettors
         }
 
@@ -143,7 +148,7 @@ contract CommitRevealBSP is ReentrancyGuard {
 
         emit Settled(cur, feeGwei, rakeAmount);
 
-        _open(R.thresholdGwei); // open next round with same threshold
+        _open(0); // open next round; threshold revealed later
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -206,10 +211,20 @@ contract CommitRevealBSP is ReentrancyGuard {
                                    ADMIN
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Owner may adjust threshold for *next* round.
-    function setNextThreshold(uint256 thr) external onlyOwner {
-        require(rounds[cur].hiPool == 0 && rounds[cur].loPool == 0, "bets placed");
+    /// @notice Commit hash(threshold, nonce) for the next round.
+    function commit(bytes32 h) external onlyOwner {
+        require(commitRound <= cur, "pending");
+        commitRound = cur + 1;
+        thresholdCommit = h;
+    }
+
+    /// @notice Reveal threshold for the committed round.
+    function reveal(uint256 thr, uint256 nonce) external onlyOwner {
+        require(commitRound == cur, "round");
+        require(keccak256(abi.encodePacked(thr, nonce)) == thresholdCommit, "bad");
         rounds[cur].thresholdGwei = thr;
+        thresholdCommit = 0;
+        commitRound = 0;
     }
 
     /// @notice Sweep accumulated dust after settlement and long inactivity.
@@ -236,6 +251,7 @@ contract CommitRevealBSP is ReentrancyGuard {
             rake: 0,
             thresholdGwei: thr,
             feeResult: 0,
+            settlePriceGwei: 0,
             settled: false
         });
         emit NewRound(cur, block.timestamp + 300, block.timestamp + 600, thr);

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
+
+// Deprecated in favour of CommitRevealBSP
 import "./BaseBlobVault.sol";
 import "./IBlobBaseFee.sol";
 import "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";

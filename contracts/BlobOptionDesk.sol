@@ -157,11 +157,11 @@ contract BlobOptionDesk is ReentrancyGuard {
     uint256 public constant GRACE_PERIOD = 6 hours;
 
     /// @notice sweep remaining margin after all exercises or timeout
-    function sweepMargin(uint256 id) external {
+    function sweepMargin(uint256 id) external nonReentrant {
         Series storage s = series[id];
+        require(msg.sender == writer, "!writer");
         require(seriesSettled[id], "unsettled");
-        require(s.margin > 0, "none");
-        require(s.sold == 0 || block.timestamp > s.expiry + GRACE_PERIOD, "pending");
+        require(s.payWei == 0, "ITM");
         uint256 amt = s.margin;
         s.margin = 0;
         payable(writer).transfer(amt);

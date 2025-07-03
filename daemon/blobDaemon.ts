@@ -9,10 +9,7 @@ const PROVIDER = new ethers.JsonRpcProvider(process.env.RPC!);
 const wallet = new ethers.Wallet(process.env.PRIV!, PROVIDER);
 const bParimutuel = new ethers.Contract(
   process.env.BSP!,
-  [
-    "function settle() external",
-    "function setNextThreshold(uint256) external"
-  ],
+  ["function settle() external"],
   wallet
 );
 
@@ -58,8 +55,8 @@ async function blobFeeGwei(): Promise<number> {
         const tx = await bParimutuel.settle({ gasLimit: 200_000 });
         console.log(`settle sent`, tx.hash);
 
-        // After a successful settlement, roll the threshold forward.
-        await (await bParimutuel.setNextThreshold(fee)).wait();
+        // broadcast next threshold for commitRevealBot
+        await redis.publish("nextThreshold", fee.toString());
 
         lastHour = hr; // update only on success
       } catch (e) {
