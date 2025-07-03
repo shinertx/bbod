@@ -144,6 +144,10 @@ All contracts are permissionless once deployed but rely on timely feeds to remai
 3. Submit a pull request with a clear description of your changes and test evidence.
 4. Maintain backward compatibility when touching on-chain code and document any new parameters or risks.
 
+## Security: How to protect your operator private key
+
+Never commit private keys or plaintext mnemonics. Use a hardware wallet or encrypted secret manager for production bots. Environment files should only reference key URIs, and access should be limited.
+
 ---
 
 ## License

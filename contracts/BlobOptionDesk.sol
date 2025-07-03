@@ -80,7 +80,7 @@ contract BlobOptionDesk is ReentrancyGuard {
         require(block.timestamp + 300 < s.expiry, "too-late-to-buy");
         uint256 p = premium(s.strike, s.expiry);
         require(msg.value == p * qty, "!prem");
-        require(s.sold + qty <= s.maxSold, "oversell");
+        require(s.sold + qty <= s.maxSold, "maxSold exceeded");
         s.sold += qty;
         bal[msg.sender][id] += qty;
 

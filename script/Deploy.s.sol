@@ -3,6 +3,7 @@ pragma solidity ^0.8.23;
 import "forge-std/Script.sol";
 import "../contracts/BlobOptionDesk.sol";
 import "../contracts/BlobParimutuel.sol";
+import "../contracts/BlobFeeOracle.sol";
 
 contract Deploy is Script {
     function run() external {
@@ -11,8 +12,11 @@ contract Deploy is Script {
         try vm.envAddress("BLOB_ORACLE") returns (address o) {
             oracle = o;
         } catch {
-            oracle = address(0);
+            address[] memory signers = new address[](1);
+            signers[0] = msg.sender;
+            oracle = address(new BlobFeeOracle(signers, 1));
         }
+        require(oracle != address(0), "oracle required");
         BlobOptionDesk desk = new BlobOptionDesk(oracle);
         BlobParimutuel pm  = new BlobParimutuel(oracle);
         console.log("BBOD:", address(desk));
