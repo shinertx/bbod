@@ -59,7 +59,40 @@ contract BSPFuzz is Test {
         vm.prank(bettor);
         pm.claim(1, CommitRevealBSP.Side.Hi, salt);
     }
-} 
+
+    function testCommitRevealThreshold(uint96 fee) public {
+        fee = uint96(bound(fee, 5, 200));
+
+        // commit threshold for next round
+        bytes32 h = keccak256(abi.encodePacked(uint256(fee), uint256(1)));
+        pm.commit(h);
+
+        // bettor commits
+        vm.deal(bettor, 1 ether);
+        bytes32 salt = keccak256("s");
+        bytes32 bet = keccak256(abi.encodePacked(bettor, CommitRevealBSP.Side.Hi, salt));
+        vm.prank(bettor);
+        pm.commit{value: 1 ether}(bet);
+
+        vm.warp(block.timestamp + 301);
+        vm.prank(bettor);
+        pm.reveal(CommitRevealBSP.Side.Hi, salt);
+
+        (, , uint256 revealTs,,,,,,) = pm.rounds(1);
+        vm.warp(revealTs + 1);
+        bytes32 digest = keccak256(abi.encodePacked("BLOB_FEE", uint256(50), block.timestamp/12));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest.toEthSignedMessageHash());
+        bytes[] memory sigs = new bytes[](1);
+        sigs[0] = abi.encodePacked(r, s, v);
+        oracle.push(50, sigs);
+        pm.settle();
+
+        // reveal threshold for round 2
+        pm.reveal(fee, 1);
+        (, , , , , , uint256 thr,,) = pm.rounds(2);
+        assertEq(thr, fee);
+    }
+}
     function testNonRevealForfeit() public {
         address hi = address(0xA1);
         address lo = address(0xB1);

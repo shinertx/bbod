@@ -70,6 +70,7 @@ contract BlobFeeOracle is IBlobBaseFee {
     constructor(address[] memory _signers, uint256 _quorum) {
         require(_signers.length > 0 && _signers.length <= 256, "bad signers");
         require(_quorum > _signers.length/2, "quorum<50%");
+        require(_signers.length >= 2 && _quorum >= 2, "quorum < 2");
 
         signers = _signers;
         minSigners = _quorum;
@@ -137,6 +138,11 @@ contract BlobFeeOracle is IBlobBaseFee {
     /// @inheritdoc IBlobBaseFee
     function blobBaseFee() external view override returns (uint256) {
         return lastFee;
+    }
+
+    /// @notice Number of authorised signers.
+    function signerCount() external view returns (uint256) {
+        return signers.length;
     }
 
     /// @dev Count set bits using Brian Kernighan's algorithm.

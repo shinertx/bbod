@@ -1,0 +1,6 @@
+- [ ] Safe owners confirmed & hardware wallets tested
+- [ ] 3 oracle feeders online (distinct RPCs)
+- [ ] commitRevealBot + daemon + settleBot on PM2 with restart-on-fail
+- [ ] 8 ETH gas buffer in Safe “ops” wallet
+- [ ] Verified contracts on Etherscan
+- [ ] Front-end NEXT_PUBLIC_* envs set & redeployed
