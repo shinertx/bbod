@@ -3,6 +3,7 @@ pragma solidity ^0.8.23;
 
 import "lib/openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
 import "lib/openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
+import "lib/openzeppelin-contracts/contracts/utils/cryptography/EIP712.sol";
 import "./IBlobBaseFee.sol";
 using MessageHashUtils for bytes32;
 
@@ -20,14 +21,16 @@ using MessageHashUtils for bytes32;
  *         The contract is self-contained and owner-less – the only privileged
  *         accounts are the signers that are specified at construction time.
  */
-contract BlobFeeOracle is IBlobBaseFee {
+contract BlobFeeOracle is IBlobBaseFee, EIP712 {
+    struct FeedMsg { uint256 fee; uint256 deadline; }
+    bytes32 private constant FEED_TYPEHASH = keccak256("FeedMsg(uint256 fee,uint256 deadline)");
     /*//////////////////////////////////////////////////////////////////////////
                                       EVENTS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Emitted each time a new canonical fee is stored.
+    /// @notice Emitted each time a new fee observation reaches quorum.
     /// @param feeGwei The blob base fee in gwei.
-    event NewFee(uint256 feeGwei);
+    event Pushed(uint256 feeGwei);
 
     /*//////////////////////////////////////////////////////////////////////////
                                      STORAGE
@@ -67,10 +70,11 @@ contract BlobFeeOracle is IBlobBaseFee {
 
     /// @param _signers  Array of authorised signer addresses (max 256).
     /// @param _quorum   Required number of signatures to finalise a slot.
-    constructor(address[] memory _signers, uint256 _quorum) {
+    constructor(address[] memory _signers, uint256 _quorum)
+        EIP712("BlobFeeOracle", "1")
+    {
         require(_signers.length > 0 && _signers.length <= 256, "bad signers");
-        require(_quorum > _signers.length/2, "quorum<50%");
-        require(_signers.length >= 2 && _quorum >= 2, "quorum < 2");
+        require(_quorum > 0 && _quorum <= _signers.length, "quorum");
 
         signers = _signers;
         minSigners = _quorum;
@@ -101,21 +105,20 @@ contract BlobFeeOracle is IBlobBaseFee {
                                EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Push new observation – uses off-chain ECDSA aggregation.  Caller
-    ///         supplies fee value and the concatenated signatures from ≥minSigners.
-    function push(uint256 feeGwei, bytes[] calldata sigs) external {
+    /// @notice Push a new fee observation using EIP-712 quorum signatures.
+    function push(FeedMsg calldata m, bytes[] calldata sigs) external {
         require(!paused, "paused");
-        require(feeGwei < 10_000, "fee-out-of-range");
+        require(block.timestamp <= m.deadline, "expired");
+        require(m.fee < 10_000, "fee-out-of-range");
+        require(sigs.length >= minSigners, "quorum");
 
-        // message = keccak256("BLOB_FEE", fee, slot)
-        uint256 slot = block.timestamp / 12;
-        require(!slotPushed[slot], "already-pushed");
-        slotPushed[slot] = true;
-        bytes32 h = keccak256(abi.encodePacked("BLOB_FEE", feeGwei, slot));
+        bytes32 digest = _hashTypedDataV4(
+            keccak256(abi.encode(FEED_TYPEHASH, m.fee, m.deadline))
+        );
 
         uint256 seen;
-        for(uint256 i=0;i<sigs.length;i++){
-            address s = ECDSA.recover(h.toEthSignedMessageHash(), sigs[i]);
+        for (uint256 i = 0; i < sigs.length; i++) {
+            address s = ECDSA.recover(digest, sigs[i]);
             require(isSigner[s], "!signer");
             uint256 idx = signerIndex[s];
             uint256 flag = 1 << idx;
@@ -124,11 +127,9 @@ contract BlobFeeOracle is IBlobBaseFee {
         }
         require(_popcount(seen) >= minSigners, "quorum");
 
-        // simple EMA smoothing across 4 slots to make manipulation pricey.
-        if (lastFee == 0) lastFee = feeGwei;
-        else lastFee = (lastFee * 3 + feeGwei) / 4;
+        lastFee = m.fee;
         lastTs = block.timestamp;
-        emit NewFee(lastFee);
+        emit Pushed(m.fee);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -195,7 +196,7 @@ contract BlobFeeOracle is IBlobBaseFee {
         require(feeGwei < 10_000, "fee-out-of-range");
         lastFee = feeGwei;
         lastTs = block.timestamp;
-        emit NewFee(feeGwei);
+        emit Pushed(feeGwei);
     }
 
     function pause(bool p) external { require(msg.sender==timelock, "!tl"); paused=p; }

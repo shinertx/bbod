@@ -15,6 +15,9 @@ contract BSPFuzz is Test {
     address[] signers;
     uint256 private PK = 0xA11CE;
     address private signer;
+
+    bytes32 DOMAIN_SEPARATOR;
+    bytes32 constant TYPEHASH = keccak256("FeedMsg(uint256 fee,uint256 deadline)");
     
     // allow this contract to receive ether (rake)
     receive() external payable {}
@@ -24,6 +27,15 @@ contract BSPFuzz is Test {
         signers.push(signer);
         oracle = new BlobFeeOracle(signers, 1);
         pm = new CommitRevealBSP(address(oracle));
+        DOMAIN_SEPARATOR = keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256(bytes("BlobFeeOracle")),
+                keccak256(bytes("1")),
+                block.chainid,
+                address(oracle)
+            )
+        );
     }
 
     function testFuzz_FullCycle(uint96 betAmount, uint96 finalFee) public {
@@ -47,11 +59,13 @@ contract BSPFuzz is Test {
         ( , , uint256 revealTs, , , , , , ) = pm.rounds(1);
         vm.warp(revealTs + 1);
 
-        bytes32 digest = keccak256(abi.encodePacked("BLOB_FEE", uint256(finalFee), block.timestamp/12));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest.toEthSignedMessageHash());
+        uint256 dl = block.timestamp + 30;
+        bytes32 structHash = keccak256(abi.encode(TYPEHASH, uint256(finalFee), dl));
+        bytes32 digest = MessageHashUtils.toTypedDataHash(DOMAIN_SEPARATOR, structHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest);
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = abi.encodePacked(r, s, v);
-        oracle.push(finalFee, sigs);
+        oracle.push(BlobFeeOracle.FeedMsg({fee: finalFee, deadline: dl}), sigs);
 
         pm.settle();
 
@@ -80,11 +94,13 @@ contract BSPFuzz is Test {
 
         (, , uint256 revealTs,,,,,,) = pm.rounds(1);
         vm.warp(revealTs + 1);
-        bytes32 digest = keccak256(abi.encodePacked("BLOB_FEE", uint256(50), block.timestamp/12));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest.toEthSignedMessageHash());
+        uint256 dl2 = block.timestamp + 30;
+        bytes32 structHash2 = keccak256(abi.encode(TYPEHASH, uint256(50), dl2));
+        bytes32 digest2 = MessageHashUtils.toTypedDataHash(DOMAIN_SEPARATOR, structHash2);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest2);
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = abi.encodePacked(r, s, v);
-        oracle.push(50, sigs);
+        oracle.push(BlobFeeOracle.FeedMsg({fee: 50, deadline: dl2}), sigs);
         pm.settle();
 
         // reveal threshold for round 2
@@ -113,11 +129,13 @@ contract BSPFuzz is Test {
 
         (, , uint256 revealTs,,,,,,) = pm.rounds(1);
         vm.warp(revealTs + 1);
-        bytes32 digest = keccak256(abi.encodePacked("BLOB_FEE", uint256(100), block.timestamp/12));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest.toEthSignedMessageHash());
+        uint256 dl3 = block.timestamp + 30;
+        bytes32 structHash3 = keccak256(abi.encode(TYPEHASH, uint256(100), dl3));
+        bytes32 digest3 = MessageHashUtils.toTypedDataHash(DOMAIN_SEPARATOR, structHash3);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest3);
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = abi.encodePacked(r, s, v);
-        oracle.push(100, sigs);
+        oracle.push(BlobFeeOracle.FeedMsg({fee: 100, deadline: dl3}), sigs);
         pm.settle();
 
         vm.warp(block.timestamp + pm.GRACE_NONREVEAL() + 1);

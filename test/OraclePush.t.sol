@@ -17,19 +17,30 @@ contract OraclePushTest is Test {
         oracle = new BlobFeeOracle(signers, 1);
     }
 
-    function _sig(uint256 fee, uint256 slot) internal view returns(bytes[] memory sigs){
-        bytes32 h = keccak256(abi.encodePacked("BLOB_FEE", fee, slot));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(uint256(uint160(signer)), h.toEthSignedMessageHash());
+    bytes32 constant DOMAIN_SEPARATOR = keccak256(
+        abi.encode(
+            keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+            keccak256(bytes("BlobFeeOracle")),
+            keccak256(bytes("1")),
+            block.chainid,
+            address(oracle)
+        )
+    );
+    bytes32 constant TYPEHASH = keccak256("FeedMsg(uint256 fee,uint256 deadline)");
+
+    function _sig(uint256 fee, uint256 dl) internal view returns(bytes[] memory sigs){
+        bytes32 structHash = keccak256(abi.encode(TYPEHASH, fee, dl));
+        bytes32 digest = MessageHashUtils.toTypedDataHash(DOMAIN_SEPARATOR, structHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(uint256(uint160(signer)), digest);
         sigs = new bytes[](1);
         sigs[0] = abi.encodePacked(r, s, v);
     }
 
-    function testCannotPushTwiceSameSlot() public {
-        uint256 fee = 100;
-        uint256 slot = block.timestamp / 12;
-        bytes[] memory sigs = _sig(fee, slot);
-        oracle.push(fee, sigs);
-        vm.expectRevert("already-pushed");
-        oracle.push(fee, sigs);
+    function testDeadlineEnforced() public {
+        BlobFeeOracle.FeedMsg memory m = BlobFeeOracle.FeedMsg({fee: 100, deadline: block.timestamp + 1});
+        bytes[] memory sigs = _sig(m.fee, m.deadline);
+        vm.warp(m.deadline + 1);
+        vm.expectRevert();
+        oracle.push(m, sigs);
     }
 }
