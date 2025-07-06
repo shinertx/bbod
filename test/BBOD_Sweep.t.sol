@@ -22,12 +22,25 @@ contract BBODSweep is Test {
         desk = new BlobOptionDesk(address(oracle));
     }
 
+    bytes32 constant DOMAIN = keccak256(
+        abi.encode(
+            keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+            keccak256(bytes("BlobFeeOracle")),
+            keccak256(bytes("1")),
+            block.chainid,
+            address(oracle)
+        )
+    );
+    bytes32 constant TYPEHASH = keccak256("FeedMsg(uint256 fee,uint256 deadline)");
+
     function _push(uint256 fee) internal {
-        bytes32 h = keccak256(abi.encodePacked("BLOB_FEE", fee, block.timestamp/12));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, h.toEthSignedMessageHash());
+        uint256 dl = block.timestamp + 30;
+        bytes32 structHash = keccak256(abi.encode(TYPEHASH, fee, dl));
+        bytes32 digest = MessageHashUtils.toTypedDataHash(DOMAIN, structHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest);
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = abi.encodePacked(r, s, v);
-        oracle.push(fee, sigs);
+        oracle.push(BlobFeeOracle.FeedMsg({fee: fee, deadline: dl}), sigs);
     }
 
     function testSweepMarginOTM() public {

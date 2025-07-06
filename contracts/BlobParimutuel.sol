@@ -22,7 +22,8 @@ contract BlobParimutuel is BaseBlobVault, ReentrancyGuard {
     uint256 public constant SETTLE_BOUNTY_BP = 10; // 0.10 %
     uint256 public cur;
     address public owner;
-    uint256 public nextThresholdGwei; // threshold to apply to the *next* round if preset
+    mapping(uint256 => bool) public thresholdLocked;
+    uint256 public pendingThreshold; // for round+1
     IBlobBaseFee public immutable F;
 
     mapping(uint256=>Round) public rounds;
@@ -40,7 +41,7 @@ contract BlobParimutuel is BaseBlobVault, ReentrancyGuard {
     constructor(address feeOracle) {
         owner = msg.sender;
         F = IBlobBaseFee(feeOracle);
-        _open(25);
+        _open();
     }
 
     receive() external payable {}
@@ -52,6 +53,9 @@ contract BlobParimutuel is BaseBlobVault, ReentrancyGuard {
         Round storage r = rounds[cur];
         require(block.timestamp + BUFFER < r.closeTs, "bet-window-closed");
         require(msg.value >= MIN_BET, "dust");
+        if (!thresholdLocked[cur]) {
+            thresholdLocked[cur] = true;
+        }
         if(hi){hiBet[cur][msg.sender]+=msg.value; r.hiPool+=msg.value;}
         else  {loBet[cur][msg.sender]+=msg.value; r.loPool+=msg.value;}
         emit Bet(cur,msg.sender,hi,msg.value);
@@ -72,7 +76,7 @@ contract BlobParimutuel is BaseBlobVault, ReentrancyGuard {
             emit RefundAll(cur);
             emit RoundVoided(cur, r.hiPool + r.loPool);
             _settle(feeGwei);
-            _open(r.thresholdGwei);
+            _open();
             return;
         }
 
@@ -91,7 +95,7 @@ contract BlobParimutuel is BaseBlobVault, ReentrancyGuard {
         payable(owner).transfer(rake);
 
         _settle(feeGwei);
-        _open(r.thresholdGwei);
+        _open();
     }
 
     function claim(uint256 id) external nonReentrant {
@@ -121,27 +125,27 @@ contract BlobParimutuel is BaseBlobVault, ReentrancyGuard {
         payable(msg.sender).transfer(pay);
     }
 
-    function _open(uint256 thrFallback) internal {
+    function _open() internal {
         cur += 1;
-        uint256 thr = nextThresholdGwei != 0 ? nextThresholdGwei : thrFallback;
-        // clear for subsequent rounds
-        nextThresholdGwei = 0;
         rounds[cur] = Round({
             closeTs: block.timestamp + 3600,
             hiPool: 0,
             loPool: 0,
             feeWei: 0,
-            thresholdGwei: thr,
+            thresholdGwei: pendingThreshold == 0
+                ? F.blobBaseFee()
+                : pendingThreshold,
             settlePriceGwei: 0
         });
-        emit NewRound(cur, block.timestamp+3600, thr);
+        thresholdLocked[cur] = false;
+        pendingThreshold = 0;
+        emit NewRound(cur, rounds[cur].closeTs, rounds[cur].thresholdGwei);
     }
 
-    /// @notice Set threshold for the *next* round; cannot modify current round once bets exist.
-    function setNextThreshold(uint256 thr) external onlyOwner {
-        Round storage r = rounds[cur];
-        require(r.hiPool == 0 && r.loPool == 0, "bets placed");
-        nextThresholdGwei = thr;
+    /// @notice Set threshold for the next round once current round has activity.
+    function setThreshold(uint256 newThr) external onlyOwner {
+        require(thresholdLocked[cur], "bet yet?");
+        pendingThreshold = newThr;
     }
 
     /// @notice Collect stray wei that might accumulate due to rounding or refunds.

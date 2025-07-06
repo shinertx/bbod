@@ -44,11 +44,20 @@ contract CapSpikeOptionTest is Test {
         // warp to expiry+1 and push fee above cap
         vm.warp(block.timestamp + 2);
         uint256 fee = 200;
-        bytes32 digest = keccak256(abi.encodePacked("BLOB_FEE", fee, block.timestamp/12));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest.toEthSignedMessageHash());
+        uint256 dl = block.timestamp + 30;
+        bytes32 domain = keccak256(abi.encode(
+            keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+            keccak256(bytes("BlobFeeOracle")),
+            keccak256(bytes("1")),
+            block.chainid,
+            address(oracle)
+        ));
+        bytes32 structHash = keccak256(abi.encode(keccak256("FeedMsg(uint256 fee,uint256 deadline)"), fee, dl));
+        bytes32 digest = MessageHashUtils.toTypedDataHash(domain, structHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest);
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = abi.encodePacked(r, s, v);
-        oracle.push(fee, sigs); // fee higher than cap
+        oracle.push(BlobFeeOracle.FeedMsg({fee: fee, deadline: dl}), sigs); // fee higher than cap
 
         desk.settle(1);
         (,,, , uint256 payWei,,) = desk.series(1);

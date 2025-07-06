@@ -11,7 +11,6 @@ contract BlobOptionDesk is ReentrancyGuard {
         uint256 sold;
         uint256 payWei;
         uint256 margin;
-        uint256 maxSold;
     }
 
     address public immutable writer;
@@ -20,6 +19,7 @@ contract BlobOptionDesk is ReentrancyGuard {
 
     mapping(uint256=>Series) public series;
     mapping(uint256=>bool) public seriesSettled;
+    mapping(uint256=>uint256) public seriesMaxSold;
     mapping(address=>mapping(uint256=>uint256)) public bal;
     // Per-series premium escrow pot and unlock timestamp.
     mapping(uint256 => uint256) public premCollected;
@@ -28,6 +28,7 @@ contract BlobOptionDesk is ReentrancyGuard {
     // Events
     event PayCapped(uint256 indexed id, uint256 rawWei, uint256 capWei);
     event SettleBounty(uint256 indexed id, address indexed caller, uint256 bountyWei);
+    event Purchase(uint256 indexed id, address indexed buyer, uint256 qty, uint256 timeValue, uint256 intrinsic);
 
     constructor(address feeOracle) payable {
         writer = msg.sender;
@@ -59,17 +60,24 @@ contract BlobOptionDesk is ReentrancyGuard {
             expiry: expiry,
             sold: 0,
             payWei: 0,
-            margin: msg.value,
-            maxSold: maxSold
+            margin: msg.value
         });
+        seriesMaxSold[id] = maxSold;
+    }
+
+    function optionCost(uint256 strike, uint256 expiry)
+        public view returns (uint256 timeValue, uint256 intrinsic)
+    {
+        uint256 T = expiry - block.timestamp;
+        uint256 sigma = 12e9;
+        timeValue = k * sigma * sqrt((T) * 1e18 / 3600) / 1e18;
+        uint256 feeNow = F.blobBaseFee();
+        intrinsic = feeNow > strike ? (feeNow - strike) * 1 gwei : 0;
     }
 
     function premium(uint256 strike, uint256 expiry) public view returns (uint256) {
-        uint256 T = expiry - block.timestamp;
-        uint256 sigma = 12e9;
-        uint256 timePrem = k * sigma * sqrt(T * 1e18 / 3600) / 1e18;
-        uint256 intrinsic = F.blobBaseFee() > strike ? (F.blobBaseFee() - strike) * 1 gwei : 0;
-        return timePrem > intrinsic ? timePrem : intrinsic;
+        (uint256 tv, uint256 iv) = optionCost(strike, expiry);
+        return tv + iv;
     }
     function sqrt(uint256 y) internal pure returns (uint256 z) {
         if (y > 3) { z = y; uint256 x = y/2+1; while (x < z){ z=x; x=(y/x + x)/2; }} else if (y!=0) z = 1;
@@ -78,11 +86,14 @@ contract BlobOptionDesk is ReentrancyGuard {
     function buy(uint256 id, uint256 qty) external payable {
         Series storage s = series[id];
         require(block.timestamp + 300 < s.expiry, "too-late-to-buy");
-        uint256 p = premium(s.strike, s.expiry);
-        require(msg.value == p * qty, "!prem");
-        require(s.sold + qty <= s.maxSold, "maxSold exceeded");
+        (uint256 tv, uint256 iv) = optionCost(s.strike, s.expiry);
+        uint256 cost = (tv + iv) * qty;
+        require(msg.value >= cost, "!prem");
+        require(s.sold + qty <= seriesMaxSold[id], "sold>limit");
         s.sold += qty;
         bal[msg.sender][id] += qty;
+
+        emit Purchase(id, msg.sender, qty, tv, iv);
 
         // add to series-level premium pot & (re)start 1h escrow timer
         premCollected[id] += msg.value;
