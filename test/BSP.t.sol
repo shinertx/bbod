@@ -56,7 +56,7 @@ contract BSPFuzz is Test {
         pm.reveal(CommitRevealBSP.Side.Hi, salt);
 
         // 3. Forward to settlement (after reveal window end)
-        ( , , uint256 revealTs, , , , , , ) = pm.rounds(1);
+        ( , , uint256 revealTs, , , , , , , ) = pm.rounds(1);
         vm.warp(revealTs + 1);
 
         uint256 dl = block.timestamp + 30;
@@ -92,7 +92,7 @@ contract BSPFuzz is Test {
         vm.prank(bettor);
         pm.reveal(CommitRevealBSP.Side.Hi, salt);
 
-        (, , uint256 revealTs,,,,,,) = pm.rounds(1);
+        (, , uint256 revealTs,,,,,,,,) = pm.rounds(1);
         vm.warp(revealTs + 1);
         uint256 dl2 = block.timestamp + 30;
         bytes32 structHash2 = keccak256(abi.encode(TYPEHASH, uint256(50), dl2));
@@ -105,7 +105,7 @@ contract BSPFuzz is Test {
 
         // reveal threshold for round 2
         pm.reveal(fee, 1);
-        (, , , , , , uint256 thr,,) = pm.rounds(2);
+        (, , , , , , , uint256 thr,,,) = pm.rounds(2);
         assertEq(thr, fee);
     }
 }
@@ -127,7 +127,7 @@ contract BSPFuzz is Test {
         vm.prank(hi);
         pm.reveal(CommitRevealBSP.Side.Hi, saltH);
 
-        (, , uint256 revealTs,,,,,,) = pm.rounds(1);
+        (, , uint256 revealTs,,,,,,,,) = pm.rounds(1);
         vm.warp(revealTs + 1);
         uint256 dl3 = block.timestamp + 30;
         bytes32 structHash3 = keccak256(abi.encode(TYPEHASH, uint256(100), dl3));
