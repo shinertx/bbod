@@ -70,9 +70,20 @@ contract OptionDeskEdge is Test {
         vm.warp(expiry + 1);
         _push(50);
         desk.settle(3);
+        vm.warp(expiry + desk.GRACE_PERIOD() + 1);
         uint256 balBefore = address(this).balance;
         desk.withdrawMargin(3);
         assertEq(address(this).balance, balBefore + 1 ether);
+    }
+
+    function testWithdrawMarginTooEarly() public {
+        uint256 expiry = block.timestamp + 1 hours;
+        desk.create{value: 1 ether}(7, 100, 120, expiry, 1);
+        vm.warp(expiry + 1);
+        _push(50);
+        desk.settle(7);
+        vm.expectRevert("grace");
+        desk.withdrawMargin(7);
     }
 
     function testSweepMarginAfterExercise() public {
@@ -87,8 +98,19 @@ contract OptionDeskEdge is Test {
         desk.settle(4);
         vm.prank(buyer);
         desk.exercise(4);
+        vm.warp(expiry + desk.GRACE_PERIOD() + 1);
         uint256 balBefore = address(this).balance;
         desk.sweepMargin(4);
         assertGt(address(this).balance, balBefore);
+    }
+
+    function testSweepMarginTooEarly() public {
+        uint256 expiry = block.timestamp + 1 hours;
+        desk.create{value: 1 ether}(8, 50, 70, expiry, 1);
+        vm.warp(expiry + 1);
+        _push(90);
+        desk.settle(8);
+        vm.expectRevert("ITM");
+        desk.sweepMargin(8);
     }
 }

@@ -150,24 +150,20 @@ contract BlobOptionDesk is ReentrancyGuard {
     }
 
     /// @notice Withdraw writer margin once a series is settled.
-    ///         If the series expired out-of-the-money the margin can be
-    ///         reclaimed immediately.  For in-the-money expiries the writer
-    ///         must wait one day to give holders time to exercise.
+    ///         All withdrawals are subject to a `GRACE_PERIOD` after expiry
+    ///         to give holders time to exercise their options.
     function withdrawMargin(uint256 id) external nonReentrant {
         Series storage s = series[id];
         require(msg.sender == writer, "!w");
         require(seriesSettled[id], "unsettled");
-        require(
-            s.payWei == 0 || block.timestamp > s.expiry + GRACE_PERIOD,
-            "grace"
-        );
+        require(block.timestamp > s.expiry + GRACE_PERIOD, "grace");
         uint256 amt = s.margin;
         require(amt > 0, "none");
         s.margin = 0;
         payable(writer).transfer(amt);
     }
 
-    /// @notice Grace period after expiry before writer can reclaim ITM margin.
+    /// @notice Grace period after expiry before writer can reclaim margin.
     uint256 public constant GRACE_PERIOD = 1 days;
 
     /// @notice sweep remaining margin after all exercises or timeout
@@ -175,10 +171,7 @@ contract BlobOptionDesk is ReentrancyGuard {
         Series storage s = series[id];
         require(msg.sender == writer, "!writer");
         require(seriesSettled[id], "unsettled");
-        require(
-            s.payWei == 0 || block.timestamp > s.expiry + GRACE_PERIOD,
-            "ITM"
-        );
+        require(block.timestamp > s.expiry + GRACE_PERIOD, "ITM");
         uint256 amt = s.margin;
         require(amt > 0, "none");
         s.margin = 0;

@@ -49,6 +49,7 @@ contract BBODSweep is Test {
         vm.warp(expiry + 1);
         _push(90); // below strike => OTM
         desk.settle(1);
+        vm.warp(expiry + desk.GRACE_PERIOD() + 1);
         uint256 balBefore = address(this).balance;
         desk.sweepMargin(1);
         assertEq(address(this).balance, balBefore + 1 ether);
