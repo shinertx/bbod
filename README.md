@@ -13,9 +13,8 @@ The repository also ships monitoring and automation tools for production deploym
 ## Repository Layout
 
 - **`contracts/`** – Solidity contracts for the oracle, option desk and parimutuel vaults.
-- **`daemon/`** – Off-chain TypeScript services: `blobDaemon.ts` to fetch blob fees and settle BSP rounds, and `wsBridge.ts` to relay Redis pub/sub messages to WebSocket clients.
+- **`daemon/`** – Off-chain TypeScript services: `blobDaemon.ts` to fetch blob fees and settle BSP rounds, `wsBridge.ts` to relay Redis pub/sub messages to WebSocket clients, and `oracleBot.ts` to sign and push fees.
 - **`bots/`** – Operational keepers and market bots:
-  - `feedA.ts` / `feedB.ts` – oracle feeders to push the blob fee every 12 s.
   - `ivBot.ts` – placeholder implied-volatility updater for BBOD.
   - `seedBot.ts` – opens option series and seeds pools with small stakes.
   - `settleBot.ts` – permissionless fallback for settling BSP rounds.
@@ -47,6 +46,7 @@ Create a `.env` file (see `.env.example`) and populate the following variables:
 |------|---------|
 | `RPC` | RPC URL used by bots and tests |
 | `PRIV` | Private key for deployments and bot accounts |
+| `ORACLE_KEYS` | Comma separated private keys used by `oracleBot.ts` for EIP-712 signatures |
 | `ORACLE` | Address of the deployed `BlobFeeOracle` |
 | `BLOB_ORACLE` | Same as `ORACLE` for forge scripts |
 | `BSP` | Address of the deployed `BlobParimutuel` |
@@ -61,6 +61,7 @@ Example:
 ```bash
 RPC=https://mainnet.infura.io/v3/YOUR_KEY
 PRIV=0xYOUR_PRIVATE_KEY
+ORACLE_KEYS=0xKEY1,0xKEY2,0xKEY3
 ORACLE=0xORACLE_ADDRESS
 BLOB_ORACLE=0xORACLE_ADDRESS
 BSP=0xBSP_ADDRESS
@@ -102,18 +103,18 @@ METRICS_PORT=9464
    ```bash
    pnpm ts-node daemon/wsBridge.ts
    pnpm ts-node daemon/blobDaemon.ts
-   pnpm ts-node bots/feedA.ts         # run on multiple machines for liveness
-   pnpm ts-node bots/feedB.ts         # second feed instance
+   pnpm ts-node daemon/oracleBot.ts         # run on multiple machines for liveness
    pnpm ts-node bots/thresholdBot.ts
    pnpm ts-node bots/settleBot.ts
    pnpm ts-node bots/seedBot.ts
    ```
+The oracleBot signs each message with the keys in `ORACLE_KEYS` using EIP-712.
 
 ---
 
 ## Production Notes
 
-For a resilient deployment run at least two feed bots (on different providers) so the oracle continues pushing data if one fails. Keep the `settleBot` and `thresholdBot` online to ensure BSP rounds progress and thresholds track the market. Use `docker-compose` to start Prometheus and Grafana for monitoring. Expose metrics from bots via `METRICS_PORT` and add alerts for stalled feeds or missed settlements.
+For a resilient deployment run at least two oracle bot instances (on different providers) so the oracle continues pushing data if one fails. Keep the `settleBot` and `thresholdBot` online to ensure BSP rounds progress and thresholds track the market. Use `docker-compose` to start Prometheus and Grafana for monitoring. Expose metrics from bots via `METRICS_PORT` and add alerts for stalled feeds or missed settlements.
 
 All contracts are permissionless once deployed but rely on timely feeds to remain safe. The oracle can be overridden via timelock only if signers stop pushing for a full day. Carefully manage private keys and RPC reliability to avoid stuck rounds.
 
@@ -133,7 +134,7 @@ All contracts are permissionless once deployed but rely on timely feeds to remai
 **A:** Ensure the oracle address is set in `.env` as both `ORACLE` and `BLOB_ORACLE` before running the deploy script.
 
 **Q:** The UI shows no data.
-**A:** Confirm the WebSocket bridge (`wsBridge.ts`) is running and that feed bots are publishing fees to Redis.
+**A:** Confirm the WebSocket bridge (`wsBridge.ts`) is running and that oracle bots are publishing fees to Redis.
 
 ---
 
