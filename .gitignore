@@ -1,1 +1,13 @@
 node_modules
+
+# Build and cache directories
+/out/
+/cache/
+/dist/
+
+# Environment files
+.env
+
+# Ignore other lock files
+yarn.lock
+package-lock.json
