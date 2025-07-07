@@ -3,7 +3,11 @@ import { useEffect, useState } from "react";
 import io from "socket.io-client";
 import { ethers } from "ethers";
 
-const BSP_ABI = ["function betHi() payable","function betLo() payable","function claim(uint256)"];
+const BSP_ABI = [
+  "function commit(bytes32) payable",
+  "function reveal(uint8,bytes32)",
+  "function claim(uint256,uint8,bytes32)"
+];
 const BBOD_ABI = ["function premium(uint256,uint256) view returns(uint256)","function buy(uint256,uint256) payable","function exercise(uint256)"];
 
 export default function Home() {
@@ -14,6 +18,8 @@ export default function Home() {
   const [amount, setAmount] = useState("0");
   const [optId, setOptId] = useState("1");
   const [qty, setQty] = useState("1");
+  const [betSalt, setBetSalt] = useState<string>();
+  const [betSide, setBetSide] = useState<number>();
   const alertMsg = process.env.NEXT_PUBLIC_ALERT;
   useEffect(() => {
     const wsUrl = process.env.NEXT_PUBLIC_WS || "ws://localhost:6380";
@@ -30,14 +36,31 @@ export default function Home() {
     setSigner(await prov.getSigner());
   }
 
-  async function bet(hi:boolean) {
+  async function bet(hi: boolean) {
     if (!signer) return setError("connect wallet");
     setError(null);
     try {
       const c = new ethers.Contract(process.env.NEXT_PUBLIC_BSP!, BSP_ABI, signer);
-      const tx = await c[hi ? "betHi" : "betLo"]({ value: ethers.parseEther(amount) });
+      const salt = ethers.hexlify(ethers.randomBytes(32));
+      const addr = await signer.getAddress();
+      const side = hi ? 0 : 1;
+      const commit = ethers.keccak256(
+        ethers.solidityPacked(["address", "uint8", "bytes32"], [addr, side, salt])
+      );
+      const tx = await c.commit(commit, { value: ethers.parseEther(amount) });
       await tx.wait();
-    } catch(e:any){ setError(e.message); }
+      setBetSalt(salt);
+      setBetSide(side);
+      setTimeout(async () => {
+        try {
+          await (await c.reveal(side, salt)).wait();
+        } catch (e) {
+          console.error(e);
+        }
+      }, 305_000);
+    } catch (e: any) {
+      setError(e.message);
+    }
   }
 
   async function buy() {
@@ -56,7 +79,8 @@ export default function Home() {
     setError(null);
     try {
       const c = new ethers.Contract(process.env.NEXT_PUBLIC_BSP!, BSP_ABI, signer);
-      const tx = await c.claim(optId);
+      if (!betSalt || betSide === undefined) return setError("no bet");
+      const tx = await c.claim(optId, betSide, betSalt);
       await tx.wait();
     } catch(e:any){ setError(e.message); }
   }
