@@ -46,20 +46,26 @@ The repository also ships monitoring and automation tools for production deploym
 
 Create a `.env` file (see `.env.example`) and populate the following variables:
 
-| Name           | Purpose                                                                                  |
-| -------------- | ---------------------------------------------------------------------------------------- |
-| `RPC`          | RPC URL used by bots and tests                                                           |
-| `PRIV`         | Private key for deployments and bot accounts                                             |
-| `ORACLE_KEYS`  | Comma separated private keys used by `oracleBot.ts` and feed bots for EIP-712 signatures |
-| `ORACLE`       | Address of the deployed `BlobFeeOracle`                                                  |
-| `BLOB_ORACLE`  | Same as `ORACLE` for forge scripts                                                       |
-| `BSP`          | Address of the deployed `CommitRevealBSP`                                                |
-| `BBOD`         | Address of the deployed `BlobOptionDesk`                                                 |
-| `REDIS`        | Redis connection string (for daemon and WebSocket bridge)                                |
-| `BEACON`       | Fallback beacon API endpoint for blob fees                                               |
-| `WS_PORT`      | Port for the local WebSocket bridge                                                      |
-| `METRICS_PORT` | Port to expose Prometheus metrics                                                        |
+| Name                | Purpose                                                                                  |
+| ------------------- | ---------------------------------------------------------------------------------------- |
+| `RPC`               | RPC URL used by bots and tests                                                           |
+| `PRIV`              | Private key for deployments and bot accounts                                             |
+| `ORACLE_KEYS`       | Comma separated private keys used by `oracleBot.ts` and feed bots for EIP-712 signatures |
+| `ORACLE`            | Address of the deployed `BlobFeeOracle`                                                  |
+| `BLOB_ORACLE`       | Same as `ORACLE` for forge scripts                                                       |
+| `BSP`               | Address of the deployed `CommitRevealBSP`                                                |
+| `BBOD`              | Address of the deployed `BlobOptionDesk`                                                 |
+| `REDIS`             | Redis connection string (for daemon and WebSocket bridge)                                |
+| `BEACON`            | Fallback beacon API endpoint for blob fees                                               |
+| `WS_PORT`           | Port for the local WebSocket bridge                                                      |
+| `METRICS_PORT`      | Port to expose Prometheus metrics                                                        |
+| `NEXT_PUBLIC_BSP`   | Deployed BSP address used by the frontend                                                |
+| `NEXT_PUBLIC_BBOD`  | Deployed BBOD address used by the frontend                                               |
+| `NEXT_PUBLIC_WS`    | WebSocket URL consumed by the frontend                                                   |
+| `NEXT_PUBLIC_ALERT` | URL for frontend alert API                                                               |
+| `SAFE_ADDRESS`      | Safe address for the Safe deployment script                                              |
 
+The `NEXT_PUBLIC_*` variables are consumed by the frontend. `SAFE_ADDRESS` is needed for the Safe deployment script.
 Example:
 
 ```bash
@@ -74,6 +80,11 @@ REDIS=redis://localhost:6379
 BEACON=http://localhost:5052/eth/v1/debug/beacon/blob_fee
 WS_PORT=6380
 METRICS_PORT=9464
+NEXT_PUBLIC_BSP=0xBSP_ADDRESS
+NEXT_PUBLIC_BBOD=0xBBOD_ADDRESS
+NEXT_PUBLIC_WS=ws://localhost:6380
+NEXT_PUBLIC_ALERT=
+SAFE_ADDRESS=0xSAFE_ADDRESS
 ```
 
 ---
