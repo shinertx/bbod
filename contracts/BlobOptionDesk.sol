@@ -31,12 +31,24 @@ contract BlobOptionDesk is ReentrancyGuard {
     event SettleBounty(uint256 indexed id, address indexed caller, uint256 bountyWei);
     event Purchase(uint256 indexed id, address indexed buyer, uint256 qty, uint256 timeValue, uint256 intrinsic);
 
+    /*//////////////////////////////////////////////////////////////////////////
+                                   PAUSING
+    //////////////////////////////////////////////////////////////////////////*/
+
+    bool public paused;
+    modifier notPaused() { require(!paused, "paused"); _; }
+
     constructor(address feeOracle) payable {
         writer = msg.sender;
         F = IBlobBaseFee(feeOracle);
     }
 
-    function setK(uint256 newK) external {
+    function pause(bool p) external {
+        require(msg.sender == writer, "!auth");
+        paused = p;
+    }
+
+    function setK(uint256 newK) external notPaused {
         require(msg.sender == writer, "!auth");
         k = newK;
     }
@@ -85,7 +97,7 @@ contract BlobOptionDesk is ReentrancyGuard {
         if (y > 3) { z = y; uint256 x = y/2+1; while (x < z){ z=x; x=(y/x + x)/2; }} else if (y!=0) z = 1;
     }
 
-    function buy(uint256 id, uint256 qty) external payable {
+    function buy(uint256 id, uint256 qty) external payable notPaused {
         Series storage s = series[id];
         require(block.timestamp + 300 < s.expiry, "too-late-to-buy");
         (uint256 tv, uint256 iv) = optionCost(s.strike, s.expiry);
@@ -104,7 +116,7 @@ contract BlobOptionDesk is ReentrancyGuard {
         }
     }
 
-    function settle(uint256 id) external nonReentrant {
+    function settle(uint256 id) external nonReentrant notPaused {
         Series storage s = series[id];
         require(block.timestamp >= s.expiry, "!exp");
         require(!seriesSettled[id], "series settled");
@@ -136,7 +148,7 @@ contract BlobOptionDesk is ReentrancyGuard {
             _safeSend(writer, refund);
         }
     }
-    function exercise(uint256 id) external nonReentrant {
+    function exercise(uint256 id) external nonReentrant notPaused {
         Series storage s = series[id];
         require(seriesSettled[id], "unsettled");
         uint256 qty = bal[msg.sender][id];
@@ -152,7 +164,7 @@ contract BlobOptionDesk is ReentrancyGuard {
     /// @notice Withdraw writer margin once a series is settled.
     ///         All withdrawals are subject to a `GRACE_PERIOD` after expiry
     ///         to give holders time to exercise their options.
-    function withdrawMargin(uint256 id) external nonReentrant {
+    function withdrawMargin(uint256 id) external nonReentrant notPaused {
         Series storage s = series[id];
         require(msg.sender == writer, "!w");
         require(seriesSettled[id], "unsettled");
@@ -167,7 +179,7 @@ contract BlobOptionDesk is ReentrancyGuard {
     uint256 public constant GRACE_PERIOD = 1 days;
 
     /// @notice sweep remaining margin after all exercises or timeout
-    function sweepMargin(uint256 id) external nonReentrant {
+    function sweepMargin(uint256 id) external nonReentrant notPaused {
         Series storage s = series[id];
         require(msg.sender == writer, "!writer");
         require(seriesSettled[id], "unsettled");
@@ -179,7 +191,7 @@ contract BlobOptionDesk is ReentrancyGuard {
     }
 
     /// @notice Withdraw unlocked premiums for a single series.
-    function withdrawPremium(uint256 id) external nonReentrant {
+    function withdrawPremium(uint256 id) external nonReentrant notPaused {
         require(msg.sender == writer, "!auth");
         require(unlockTs[id] != 0 && block.timestamp >= unlockTs[id], "locked");
         uint256 amt = premCollected[id];
@@ -189,7 +201,7 @@ contract BlobOptionDesk is ReentrancyGuard {
 
     /// @notice Top up margin for a specific series.  Allows writer (or anyone)
     ///         to add additional collateral if volatility spikes.
-    function topUpMargin(uint256 id) external payable {
+    function topUpMargin(uint256 id) external payable notPaused {
         Series storage s = series[id];
         require(s.expiry != 0, "bad id");
         s.margin += msg.value;

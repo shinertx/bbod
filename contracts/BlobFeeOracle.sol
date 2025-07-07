@@ -46,6 +46,7 @@ contract BlobFeeOracle is IBlobBaseFee, EIP712 {
     /// @dev Quick lookup for authorised signer.
     mapping(address => uint256) private signerIndex;
     mapping(address => bool)    public isSigner;
+    mapping(address => bool)    public jailed;
 
     /// @dev Track if a slot already finalised.
     mapping(uint256 => bool) public slotPushed;
@@ -76,6 +77,7 @@ contract BlobFeeOracle is IBlobBaseFee, EIP712 {
     {
         require(_signers.length > 0 && _signers.length <= 256, "bad signers");
         require(_quorum > 0 && _quorum <= _signers.length, "quorum");
+        require(_quorum * 3 >= _signers.length * 2, "q<2/3");
 
         signers = _signers;
         minSigners = _quorum;
@@ -130,7 +132,7 @@ contract BlobFeeOracle is IBlobBaseFee, EIP712 {
         uint256 seen;
         for (uint256 i = 0; i < sigs.length; i++) {
             address s = ECDSA.recover(digest, sigs[i]);
-            require(isSigner[s], "!signer");
+            require(isSigner[s] && !jailed[s], "!signer");
             uint256 idx = signerIndex[s];
             uint256 flag = 1 << idx;
             require(seen & flag == 0, "dup");
@@ -178,6 +180,7 @@ contract BlobFeeOracle is IBlobBaseFee, EIP712 {
         require(msg.sender == timelock, "!tl");
         require(_new.length > 0 && _new.length <= 256, "bad");
         require(_q>0 && _q<=_new.length, "q");
+        require(_q * 3 >= _new.length * 2, "q<2/3");
         delete pendingSigners;
         for(uint i=0;i<_new.length;i++) pendingSigners.push(_new[i]);
         pendingMinSigners = _q;
@@ -211,4 +214,15 @@ contract BlobFeeOracle is IBlobBaseFee, EIP712 {
     }
 
     function pause(bool p) external { require(msg.sender==timelock, "!tl"); paused=p; }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                                  SLASHING / JAILING
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @notice Timelock can jail / unjail misbehaving signers (prevents voting).
+    function jailSigner(address s, bool j) external {
+        require(msg.sender == timelock, "!tl");
+        require(isSigner[s], "unknown");
+        jailed[s] = j;
+    }
 }

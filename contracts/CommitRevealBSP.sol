@@ -73,6 +73,13 @@ contract CommitRevealBSP is ReentrancyGuard {
     uint256  public nextThreshold;
 
     /*//////////////////////////////////////////////////////////////////////////
+                                    PAUSING
+    //////////////////////////////////////////////////////////////////////////*/
+
+    bool public paused;
+    modifier notPaused() { require(!paused, "paused"); _; }
+
+    /*//////////////////////////////////////////////////////////////////////////
                                    CONSTRUCTOR
     //////////////////////////////////////////////////////////////////////////*/
 
@@ -96,7 +103,7 @@ contract CommitRevealBSP is ReentrancyGuard {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Commit hash = keccak256(abi.encodePacked(msg.sender, side, salt)).
-    function commit(bytes32 h) external payable {
+    function commit(bytes32 h) external payable notPaused {
         Round storage R = rounds[cur];
         require(block.timestamp < R.closeTs, "closed");
         require(msg.value >= MIN_BET, "dust");
@@ -107,7 +114,7 @@ contract CommitRevealBSP is ReentrancyGuard {
     }
 
     /// @notice Reveal side & salt during the reveal window.
-    function reveal(Side side, bytes32 salt) external {
+    function reveal(Side side, bytes32 salt) external notPaused {
         Round storage R = rounds[cur];
         require(block.timestamp >= R.closeTs && block.timestamp < R.revealTs, "!reveal");
 
@@ -131,7 +138,7 @@ contract CommitRevealBSP is ReentrancyGuard {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Anyone may call once the reveal window has elapsed.
-    function settle() external nonReentrant {
+    function settle() external nonReentrant notPaused {
         Round storage R = rounds[cur];
         require(block.timestamp >= R.revealTs, "too early");
         require(!R.settled, "done");
@@ -184,7 +191,7 @@ contract CommitRevealBSP is ReentrancyGuard {
                                  POST-SETTLEMENT
     //////////////////////////////////////////////////////////////////////////*/
 
-    function claim(uint256 id, Side side, bytes32 /*salt*/) external nonReentrant {
+    function claim(uint256 id, Side side, bytes32 /*salt*/) external nonReentrant notPaused {
         Round storage R = rounds[id];
         require(R.settled, "unsettled");
 
@@ -269,6 +276,10 @@ contract CommitRevealBSP is ReentrancyGuard {
         uint256 tracked = R.hiPool + R.loPool;
         uint256 excess = address(this).balance > tracked ? address(this).balance - tracked : 0;
         if (excess > 0) _safeSend(owner, excess);
+    }
+
+    function pause(bool p) external onlyOwner {
+        paused = p;
     }
 
     /*//////////////////////////////////////////////////////////////////////////

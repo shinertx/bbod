@@ -18,10 +18,8 @@ const writer   = new ethers.Wallet(process.env.PRIV!, provider);
 const desk = new ethers.Contract(
   process.env.BBOD!,
   [
-    // NOTE: The contract does not currently expose a setter for `k`.
-    //       If/when a method is added (e.g. `setK(uint256)`), just
-    //       extend the ABI below and update the call inside `tick()`.
     "function k() view returns(uint256)",
+    "function setK(uint256) external",
     "function create(uint256,uint256,uint256,uint256,uint256) payable",
   ],
   writer
@@ -45,9 +43,10 @@ async function tick() {
     // ------------------------------------------------------------------
     // 2. If contract has a setter implemented, push the new value.
     // ------------------------------------------------------------------
-    // Example (commented-out until `setK(uint256)` exists on the desk):
-    // const tx = await desk.setK(nextK);
-    // console.log(`setK(${nextK}) → ${tx.hash}`);
+    if (nextK !== currentK) {
+      const tx = await desk.setK(nextK);
+      console.log(`setK(${nextK}) → ${tx.hash}`);
+    }
 
     // ------------------------------------------------------------------
     // 3. OPTIONAL – open a new option series every hour if none exists.
