@@ -3,6 +3,7 @@ pragma solidity ^0.8.23;
 
 import "./IBlobBaseFee.sol";
 import "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import "lib/openzeppelin-contracts/contracts/security/Pausable.sol";
 
 /**
  * @title CommitRevealBSP
@@ -11,7 +12,7 @@ import "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
  *         the final blocks before close.  Non-revealed tickets can be refunded
  *         (minus 1% grief-prevention fee) after a 1-hour grace window.
  */
-contract CommitRevealBSP is ReentrancyGuard {
+contract CommitRevealBSP is ReentrancyGuard, Pausable {
     /*//////////////////////////////////////////////////////////////////////////
                                      DATA TYPES
     //////////////////////////////////////////////////////////////////////////*/
@@ -81,6 +82,10 @@ contract CommitRevealBSP is ReentrancyGuard {
         _open(25); // bootstrap with default 25 gwei threshold
     }
 
+    function pause(bool p) external onlyOwner {
+        if (p) _pause(); else _unpause();
+    }
+
     /*//////////////////////////////////////////////////////////////////////////
                                     MODIFIERS
     //////////////////////////////////////////////////////////////////////////*/
@@ -95,7 +100,7 @@ contract CommitRevealBSP is ReentrancyGuard {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Commit hash = keccak256(abi.encodePacked(msg.sender, side, salt)).
-    function commit(bytes32 h) external payable {
+    function commit(bytes32 h) external payable whenNotPaused {
         Round storage R = rounds[cur];
         require(block.timestamp < R.closeTs, "closed");
         require(msg.value >= MIN_BET, "dust");
@@ -159,7 +164,7 @@ contract CommitRevealBSP is ReentrancyGuard {
             emit Settled(cur, feeGwei, 0, 0);
             uint256 thr = nextThr;
             nextThreshold = 0;
-            _open(thr);
+            if (!paused) _open(thr);
             return; // early exit – claim() will refund bettors
         }
 
@@ -167,14 +172,14 @@ contract CommitRevealBSP is ReentrancyGuard {
         uint256 rakeAmount = gross * RAKE_BP / 10_000;
         R.rake = rakeAmount;
         R.bounty = bounty;
-        if (bounty > 0) payable(msg.sender).transfer(bounty);
-        payable(owner).transfer(rakeAmount);
+        if (bounty > 0) _safeTransfer(payable(msg.sender), bounty);
+        _safeTransfer(payable(owner), rakeAmount);
 
         emit Settled(cur, feeGwei, rakeAmount, bounty);
 
         uint256 thr = nextThr;
         nextThreshold = 0;
-        _open(thr); // open next round with enforced threshold
+        if (!paused) _open(thr); // open next round with enforced threshold
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -195,7 +200,7 @@ contract CommitRevealBSP is ReentrancyGuard {
                 // round has no winners – refund
                 uint256 refund = T.amount * 995 / 1000;
                 tickets[id][msg.sender].amount = 0;
-                payable(msg.sender).transfer(refund);
+                _safeTransfer(payable(msg.sender), refund);
                 emit Refund(id, msg.sender, refund);
             } else {
                 _payout(id, msg.sender, side, salt);
@@ -205,7 +210,7 @@ contract CommitRevealBSP is ReentrancyGuard {
             require(block.timestamp > R.revealTs + GRACE_NONREVEAL, "grace");
             uint256 burn = T.amount;
             delete tickets[id][msg.sender];
-            payable(owner).transfer(burn);
+            _safeTransfer(payable(owner), burn);
             emit Refund(id, msg.sender, 0);
         }
     }
@@ -229,7 +234,7 @@ contract CommitRevealBSP is ReentrancyGuard {
 
         uint256 pay = (share * total) / poolWin;
         require(pay > 0, "dust");
-        payable(who).transfer(pay);
+        _safeTransfer(payable(who), pay);
         emit Payout(id, who, pay);
     }
 
@@ -238,7 +243,7 @@ contract CommitRevealBSP is ReentrancyGuard {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Commit hash(threshold, nonce) for the next round.
-    function commit(bytes32 h) external onlyOwner {
+    function commit(bytes32 h) external onlyOwner whenNotPaused {
         require(commitRound == 0, "pending");
         commitRound = cur + 1;
         commitTs = block.timestamp;
@@ -247,7 +252,7 @@ contract CommitRevealBSP is ReentrancyGuard {
     }
 
     /// @notice Reveal threshold for the committed round.
-    function reveal(uint256 thr, uint256 nonce) external onlyOwner {
+    function reveal(uint256 thr, uint256 nonce) external onlyOwner whenNotPaused {
         require(commitRound == cur, "round");
         require(keccak256(abi.encodePacked(thr, nonce)) == thresholdCommit, "bad");
         nextThreshold = thr;
@@ -262,7 +267,7 @@ contract CommitRevealBSP is ReentrancyGuard {
         require(R.settled && block.timestamp > R.revealTs + 30 days, "too-soon");
         uint256 tracked = R.hiPool + R.loPool;
         uint256 excess = address(this).balance > tracked ? address(this).balance - tracked : 0;
-        if (excess > 0) payable(owner).transfer(excess);
+        if (excess > 0) _safeTransfer(payable(owner), excess);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -285,6 +290,11 @@ contract CommitRevealBSP is ReentrancyGuard {
             settled: false
         });
         emit NewRound(cur, block.timestamp + 300, block.timestamp + 600, thr);
+    }
+
+    function _safeTransfer(address payable to, uint256 amt) internal {
+        (bool ok, ) = to.call{value: amt}("");
+        require(ok, "ETH_TRANSFER_FAIL");
     }
 
     /*//////////////////////////////////////////////////////////////////////////

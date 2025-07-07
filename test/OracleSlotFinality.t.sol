@@ -39,8 +39,10 @@ contract OracleSlotFinality is Test {
     function testSlotSinglePush() public {
         uint256 dl = block.timestamp + 30;
         bytes[] memory sigs = _sig(50, dl);
-        oracle.push(BlobFeeOracle.FeedMsg({fee:50, deadline:dl}), sigs);
+        BlobFeeOracle.FeedMsg[] memory msgs = new BlobFeeOracle.FeedMsg[](1);
+        msgs[0] = BlobFeeOracle.FeedMsg({fee:50, deadline:dl});
+        oracle.push(msgs, sigs);
         vm.expectRevert("already-pushed");
-        oracle.push(BlobFeeOracle.FeedMsg({fee:50, deadline:dl}), sigs);
+        oracle.push(msgs, sigs);
     }
 }

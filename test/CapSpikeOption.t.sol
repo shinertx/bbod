@@ -57,7 +57,9 @@ contract CapSpikeOptionTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest);
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = abi.encodePacked(r, s, v);
-        oracle.push(BlobFeeOracle.FeedMsg({fee: fee, deadline: dl}), sigs); // fee higher than cap
+        BlobFeeOracle.FeedMsg[] memory msgs = new BlobFeeOracle.FeedMsg[](1);
+        msgs[0] = BlobFeeOracle.FeedMsg({fee: fee, deadline: dl});
+        oracle.push(msgs, sigs); // fee higher than cap
 
         desk.settle(1);
         (,,, , uint256 payWei,,) = desk.series(1);

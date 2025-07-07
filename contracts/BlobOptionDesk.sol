@@ -2,8 +2,9 @@
 pragma solidity ^0.8.23;
 import "./IBlobBaseFee.sol";
 import "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import "lib/openzeppelin-contracts/contracts/security/Pausable.sol";
 
-contract BlobOptionDesk is ReentrancyGuard {
+contract BlobOptionDesk is ReentrancyGuard, Pausable {
     struct Series {
         uint256 strike;
         uint256 cap;
@@ -14,6 +15,7 @@ contract BlobOptionDesk is ReentrancyGuard {
     }
 
     address public immutable writer;
+    address public immutable timelock;
     /// @notice Premium scale factor. Tuned so one-hour options cost ~0.001 ETH.
     uint256 public k = 7e13;
     IBlobBaseFee public immutable F;
@@ -33,12 +35,18 @@ contract BlobOptionDesk is ReentrancyGuard {
 
     constructor(address feeOracle) payable {
         writer = msg.sender;
+        timelock = msg.sender;
         F = IBlobBaseFee(feeOracle);
     }
 
     function setK(uint256 newK) external {
-        require(msg.sender == writer, "!auth");
+        require(msg.sender == timelock, "!auth");
         k = newK;
+    }
+
+    function pause(bool p) external {
+        require(msg.sender == writer, "!auth");
+        if (p) _pause(); else _unpause();
     }
 
     function create(
@@ -47,7 +55,7 @@ contract BlobOptionDesk is ReentrancyGuard {
         uint256 capGwei,
         uint256 expiry,
         uint256 maxSold
-    ) external payable {
+    ) external payable whenNotPaused {
         require(msg.sender == writer, "!w");
         require(series[id].strike == 0, "exists");
         require(expiry > block.timestamp, "bad-expiry");
@@ -85,7 +93,7 @@ contract BlobOptionDesk is ReentrancyGuard {
         if (y > 3) { z = y; uint256 x = y/2+1; while (x < z){ z=x; x=(y/x + x)/2; }} else if (y!=0) z = 1;
     }
 
-    function buy(uint256 id, uint256 qty) external payable {
+    function buy(uint256 id, uint256 qty) external payable whenNotPaused {
         Series storage s = series[id];
         require(block.timestamp + 300 < s.expiry, "too-late-to-buy");
         (uint256 tv, uint256 iv) = optionCost(s.strike, s.expiry);
@@ -124,7 +132,7 @@ contract BlobOptionDesk is ReentrancyGuard {
         seriesSettled[id] = true;
 
         if (bounty > 0) {
-            payable(msg.sender).transfer(bounty);
+            _safeTransfer(payable(msg.sender), bounty);
             emit SettleBounty(id, msg.sender, bounty);
         }
 
@@ -133,7 +141,7 @@ contract BlobOptionDesk is ReentrancyGuard {
             uint256 bal = address(this).balance;
             if (refund > bal) refund = bal;
             s.margin = 0;
-            payable(writer).transfer(refund);
+            _safeTransfer(payable(writer), refund);
         }
     }
     function exercise(uint256 id) external nonReentrant {
@@ -146,7 +154,7 @@ contract BlobOptionDesk is ReentrancyGuard {
         require(s.margin >= due, "margin");
         s.sold -= qty;
         s.margin -= due;
-        payable(msg.sender).transfer(due);
+        _safeTransfer(payable(msg.sender), due);
     }
 
     /// @notice Withdraw writer margin once a series is settled.
@@ -160,7 +168,7 @@ contract BlobOptionDesk is ReentrancyGuard {
         uint256 amt = s.margin;
         require(amt > 0, "none");
         s.margin = 0;
-        payable(writer).transfer(amt);
+        _safeTransfer(payable(writer), amt);
     }
 
     /// @notice Grace period after expiry before writer can reclaim margin.
@@ -175,7 +183,7 @@ contract BlobOptionDesk is ReentrancyGuard {
         uint256 amt = s.margin;
         require(amt > 0, "none");
         s.margin = 0;
-        payable(writer).transfer(amt);
+        _safeTransfer(payable(writer), amt);
     }
 
     /// @notice Withdraw unlocked premiums for a single series.
@@ -184,16 +192,21 @@ contract BlobOptionDesk is ReentrancyGuard {
         require(unlockTs[id] != 0 && block.timestamp >= unlockTs[id], "locked");
         uint256 amt = premCollected[id];
         premCollected[id] = 0;
-        payable(writer).transfer(amt);
+        _safeTransfer(payable(writer), amt);
     }
 
     /// @notice Top up margin for a specific series.  Allows writer (or anyone)
     ///         to add additional collateral if volatility spikes.
-    function topUpMargin(uint256 id) external payable {
+    function topUpMargin(uint256 id) external payable whenNotPaused {
         Series storage s = series[id];
         require(s.expiry != 0, "bad id");
         s.margin += msg.value;
     }
 
+    function _safeTransfer(address payable to, uint256 amt) internal {
+        (bool ok, ) = to.call{value: amt}("");
+        require(ok, "ETH_TRANSFER_FAIL");
+    }
+
     uint256 public constant SETTLE_BOUNTY_BP = 10; // 0.10 %
-} 
+}

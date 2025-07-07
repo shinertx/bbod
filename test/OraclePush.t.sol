@@ -41,13 +41,17 @@ contract OraclePushTest is Test {
         bytes[] memory sigs = _sig(m.fee, m.deadline);
         vm.warp(m.deadline + 1);
         vm.expectRevert();
-        oracle.push(m, sigs);
+        BlobFeeOracle.FeedMsg[] memory msgs = new BlobFeeOracle.FeedMsg[](1);
+        msgs[0] = m;
+        oracle.push(msgs, sigs);
     }
 
     function testMismatchedSignature() public {
         uint256 dl = block.timestamp + 30;
         bytes[] memory sigs = _sig(99, dl); // signer signed different fee
         vm.expectRevert();
-        oracle.push(BlobFeeOracle.FeedMsg({fee: 100, deadline: dl}), sigs);
+        BlobFeeOracle.FeedMsg[] memory msgs2 = new BlobFeeOracle.FeedMsg[](1);
+        msgs2[0] = BlobFeeOracle.FeedMsg({fee: 100, deadline: dl});
+        oracle.push(msgs2, sigs);
     }
 }

@@ -28,26 +28,27 @@ const desk = new ethers.Contract(
 );
 
 const ONE_HOUR = 60 * 60 * 1000;
+const FEES: number[] = [];
+const WINDOW = 12;
 
 async function tick() {
   try {
-    // ------------------------------------------------------------------
-    // 1. Retrieve current on-chain parameter value so we can decide if an
-    //    update is necessary.
-    // ------------------------------------------------------------------
+    const fee: number = await provider.send("eth_blobBaseFee", []);
+    FEES.push(fee);
+    if (FEES.length > WINDOW) FEES.shift();
+    if (FEES.length < WINDOW) return;
+
+    const mean = FEES.reduce((a, b) => a + b, 0) / FEES.length;
+    const variance = FEES.reduce((a, b) => a + (b - mean) ** 2, 0) / FEES.length;
+    const sigma = Math.sqrt(variance);
+
     const currentK: bigint = await desk.k();
+    const nextK = BigInt(Math.floor(sigma * 1e9));
 
-    // Placeholder: naive mean-reversion towards an arbitrary target.
-    const targetK = 7_000_000_000_000_000n; // 7e15 – matches default in contract.
-    const delta   = (targetK - currentK) / 10n; // gentle adjustment (10% step).
-    const nextK   = currentK + delta;
-
-    // ------------------------------------------------------------------
-    // 2. If contract has a setter implemented, push the new value.
-    // ------------------------------------------------------------------
-    // Example (commented-out until `setK(uint256)` exists on the desk):
-    // const tx = await desk.setK(nextK);
-    // console.log(`setK(${nextK}) → ${tx.hash}`);
+    if (nextK !== currentK) {
+      const tx = await desk.setK(nextK);
+      console.log(`setK(${nextK}) → ${tx.hash}`);
+    }
 
     // ------------------------------------------------------------------
     // 3. OPTIONAL – open a new option series every hour if none exists.
