@@ -68,6 +68,7 @@ contract CommitRevealBSP is ReentrancyGuard {
     uint256  public commitRound; // round the commit applies to
     uint256  public commitTs;
     uint256  public constant REVEAL_TIMEOUT = 15 minutes;
+    uint256  public constant THRESHOLD_REVEAL_TIMEOUT = 1 hours;
     uint256  public nextThreshold;
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -131,14 +132,17 @@ contract CommitRevealBSP is ReentrancyGuard {
         Round storage R = rounds[cur];
         require(block.timestamp >= R.revealTs, "too early");
         require(!R.settled, "done");
+        uint256 nextThr;
         if (commitRound == cur) {
-            if (block.timestamp < R.revealTs + REVEAL_TIMEOUT) {
+            if (block.timestamp < R.revealTs + THRESHOLD_REVEAL_TIMEOUT) {
                 revert("threshold-not-revealed");
             } else {
                 commitRound = 0;
                 thresholdCommit = 0;
-                nextThreshold = 0;
+                nextThr = R.thresholdGwei;
             }
+        } else {
+            nextThr = nextThreshold != 0 ? nextThreshold : 0;
         }
 
         uint256 feeGwei = F.blobBaseFee();
@@ -153,7 +157,7 @@ contract CommitRevealBSP is ReentrancyGuard {
             R.rake = 0;
             R.bounty = 0;
             emit Settled(cur, feeGwei, 0, 0);
-            uint256 thr = nextThreshold != 0 ? nextThreshold : 0;
+            uint256 thr = nextThr;
             nextThreshold = 0;
             _open(thr);
             return; // early exit – claim() will refund bettors
@@ -168,7 +172,7 @@ contract CommitRevealBSP is ReentrancyGuard {
 
         emit Settled(cur, feeGwei, rakeAmount, bounty);
 
-        uint256 thr = nextThreshold != 0 ? nextThreshold : 0;
+        uint256 thr = nextThr;
         nextThreshold = 0;
         _open(thr); // open next round with enforced threshold
     }
