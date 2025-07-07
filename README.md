@@ -51,7 +51,7 @@ Create a `.env` file (see `.env.example`) and populate the following variables:
 |------|---------|
 | `RPC` | RPC URL used by bots and tests |
 | `PRIV` | Private key for deployments and bot accounts |
-| `ORACLE_KEYS` | Comma separated private keys used by `oracleBot.ts` for EIP-712 signatures |
+| `ORACLE_KEYS` | Comma separated private keys used by `feedA.ts`, `feedB.ts` and `oracleBot.ts` for EIP-712 signatures |
 | `ORACLE` | Address of the deployed `BlobFeeOracle` |
 | `BLOB_ORACLE` | Same as `ORACLE` for forge scripts |
 | `BSP` | Address of the deployed `CommitRevealBSP` |
@@ -109,11 +109,13 @@ METRICS_PORT=9464
    pnpm ts-node daemon/wsBridge.ts
    pnpm ts-node daemon/blobDaemon.ts
    pnpm ts-node daemon/oracleBot.ts         # run on multiple machines for liveness
+   pnpm ts-node bots/feedA.ts               # quorum feeder using ORACLE_KEYS
+   pnpm ts-node bots/feedB.ts               # second feeder instance
    pnpm ts-node bots/thresholdBot.ts
    pnpm ts-node bots/settleBot.ts
    pnpm ts-node bots/seedBot.ts
    ```
-The oracleBot signs each message with the keys in `ORACLE_KEYS` using EIP-712.
+All feed bots (including `oracleBot.ts`) sign each message with the keys in `ORACLE_KEYS` using EIP-712.
 
 ---
 
