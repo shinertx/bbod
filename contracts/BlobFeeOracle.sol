@@ -110,6 +110,12 @@ contract BlobFeeOracle is IBlobBaseFee, EIP712 {
         require(!paused, "paused");
         require(block.timestamp <= m.deadline, "expired");
         require(m.fee < 10_000, "fee-out-of-range");
+        if (lastFee != 0) {
+            require(
+                m.fee >= lastFee / 2 && m.fee <= lastFee * 2,
+                "fee-unstable"
+            );
+        }
         require(sigs.length >= minSigners, "quorum");
 
         uint256 slot = block.timestamp / 12;
