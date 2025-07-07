@@ -178,6 +178,16 @@ Each bot requires a stable RPC endpoint. Aim for providers with >99.9% uptime an
 3. Submit a pull request with a clear description of your changes and test evidence.
 4. Maintain backward compatibility when touching on-chain code and document any new parameters or risks.
 
+### Continuous Integration
+
+Automated CI is not yet configured. All tests and lint checks must be run manually:
+
+- `forge test -vv`
+- `pnpm lint`
+- `pnpm format`
+
+Once CI is introduced, workflows will live under `.github/workflows/`.
+
 ## Security: How to protect your operator private key
 
 Never commit private keys or plaintext mnemonics. Use a hardware wallet or encrypted secret manager for production bots. Environment files should only reference key URIs, and access should be limited.
