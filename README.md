@@ -39,7 +39,7 @@ The repository also ships monitoring and automation tools for production deploym
 ### Key Parameters
 
 - **BlobFeeOracle** – successive fee pushes may not deviate by more than 2x.
-- **CommitRevealBSP** – `REVEAL_TIMEOUT` of 15 minutes prevents threshold-freeze.
+- **CommitRevealBSP** – `REVEAL_TIMEOUT` of 15 minutes prevents threshold-freeze. `THRESHOLD_REVEAL_TIMEOUT` of 1 hour falls back to the previous threshold if unrevealed.
 - **BlobOptionDesk** – premium scale `k` defaults to `7e13`; margin withdrawal is possible after `GRACE_PERIOD` (1 day).
 
 

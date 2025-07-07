@@ -25,4 +25,22 @@ contract ThresholdRevealEnforcement is Test {
         vm.expectRevert("threshold-not-revealed");
         pm.settle();
     }
+
+    function testSettleAfterTimeoutUsesPrevThreshold() public {
+        bytes32 h = keccak256(abi.encodePacked(uint256(75), uint256(1)));
+        pm.commit(h);
+
+        (, , uint256 revealTs1,,,,,,,,) = pm.rounds(1);
+        vm.warp(revealTs1 + 1);
+        pm.settle();
+
+        (, , uint256 revealTs2,,,,,,,,) = pm.rounds(2);
+        vm.warp(revealTs2 + pm.THRESHOLD_REVEAL_TIMEOUT() + 1);
+
+        pm.settle();
+
+        (, , , , , , , uint256 thr2,,,) = pm.rounds(2);
+        (, , , , , , , uint256 thr3,,,) = pm.rounds(3);
+        assertEq(thr2, thr3, "fallback threshold");
+    }
 }
