@@ -19,6 +19,8 @@ The repository also ships monitoring and automation tools for production deploym
   - `seedBot.ts` – opens option series and seeds pools with small stakes.
   - `settleBot.ts` – permissionless fallback for settling BSP rounds.
   - `thresholdBot.ts` – automatically adjusts the BSP threshold from recent fees.
+  - `commitRevealBot.ts` – handles BSP commits and reveals if fees remain stable.
+  - `feedA.ts`/`feedB.ts` – duplicate oracle feeders run on separate machines.
 - **`script/`** – Forge deployment script `Deploy.s.sol` plus helper scripts (`settle.ts`, `flashBundle.ts`).
 - **`test/`** – Foundry test suite covering edge cases and fuzz scenarios.
 - **`frontend/`** – Minimal Next.js dashboard for live metrics.
@@ -62,7 +64,7 @@ Create a `.env` file (see `.env.example`) and populate the following variables:
 | `NEXT_PUBLIC_BSP`   | Deployed BSP address used by the frontend                                                |
 | `NEXT_PUBLIC_BBOD`  | Deployed BBOD address used by the frontend                                               |
 | `NEXT_PUBLIC_WS`    | WebSocket URL consumed by the frontend                                                   |
-| `NEXT_PUBLIC_ALERT` | URL for frontend alert API                                                               |
+| `NEXT_PUBLIC_ALERT` | Optional banner message displayed in the UI |
 | `SAFE_ADDRESS`      | Address of your Gnosis Safe used by the Safe deployment script                                              |
 
 The `NEXT_PUBLIC_*` variables are consumed by the frontend. `SAFE_ADDRESS` is needed for the Safe deployment script. Set this to the address of your multisig Safe (version 1.4.x or newer). Any transactions proposed by the script must be confirmed by the required number of Safe owners before execution.
@@ -91,6 +93,8 @@ SAFE_ADDRESS=0xSAFE_ADDRESS
 
 ## Setup
 
+Node.js **18 or newer** is required. Using [`nvm`](https://github.com/nvm-sh/nvm) is recommended so multiple versions can be managed.
+
 1. **Clone the repo and submodules**
    ```bash
    git clone https://github.com/shinertx/bbod.git
@@ -114,11 +118,11 @@ SAFE_ADDRESS=0xSAFE_ADDRESS
  forge script script/Deploy.s.sol --fork-url $RPC --broadcast
  # record the BBOD/BSP/oracle addresses and update .env
  ```
-  To deploy using a multisig Safe run:
-  ```bash
-  pnpm ts-node scripts/SafeDeploy.ts
-  ```
-  The script will queue transactions to `SAFE_ADDRESS`. Approvals from the Safe owners must be collected before execution.
+ To deploy using a multisig Safe run (set `SAFE_ADDRESS` in `.env` first):
+ ```bash
+ pnpm ts-node scripts/SafeDeploy.ts
+ ```
+ The script will queue transactions to `SAFE_ADDRESS`. Approvals from the Safe owners must be collected before execution.
 5. **Start daemons/bots**
    ```bash
    pnpm ts-node daemon/wsBridge.ts
@@ -137,11 +141,31 @@ SAFE_ADDRESS=0xSAFE_ADDRESS
    ```
    For a production build (if the `start` script is available):
    ```bash
-   pnpm --prefix frontend build && pnpm --prefix frontend start
-   ```
+pnpm --prefix frontend build && pnpm --prefix frontend start
+```
+
+## Commands Reference
+
+| Command | Purpose |
+| ------- | ------- |
+| `forge test -vv` | Run all Foundry tests |
+| `forge script script/Deploy.s.sol --fork-url $RPC --broadcast` | Deploy contracts from CLI |
+| `pnpm ts-node bots/seedBot.ts` | Execute a TypeScript bot |
+| `pnpm lint` / `pnpm format` | Lint and format the codebase |
+| `pnpm --prefix frontend dev` | Launch the Next.js frontend |
+| `docker compose up -d` | Start monitoring stack (Prometheus/Grafana) |
 ## Deployment Addresses
 
 Official contract addresses will be published in [deployments/README.md](deployments/README.md) once deployments to Sepolia and mainnet are finalized.
+
+
+## Post-Deploy Actions
+
+After contracts are live:
+
+- Run `pnpm ts-node scripts/setThreshold.ts` after each settlement to push the next threshold.
+- Periodically execute `pnpm ts-node bots/seedBot.ts` to seed liquidity.
+- Redeploy the frontend whenever any `NEXT_PUBLIC_*` values change.
 
 
 ---
@@ -157,6 +181,18 @@ All contracts are permissionless once deployed but rely on timely feeds to remai
 Each bot requires a stable RPC endpoint. Aim for providers with >99.9% uptime and rate limits of at least 5-10 requests per second. Examples include Alchemy, Infura or Ankr. Where possible use separate RPC keys per bot to avoid throttling.
 
 **Risk Warning:** Options and parimutuel betting are inherently risky. Smart contract bugs, oracle failures or extreme volatility could lead to loss of funds. Run extensive tests on a fork before using real value.
+
+## Production Checklist & Liveness
+
+See [ops/GO_LIVE_CHECKLIST.md](ops/GO_LIVE_CHECKLIST.md) before going live. Also review [ops/DAEMON_BACKUP.md](ops/DAEMON_BACKUP.md) for backup daemon setup.
+
+## Risk Warnings & Kill-Switch
+
+For emergency actions consult [ops/KILLSWITCH.md](ops/KILLSWITCH.md).
+
+## Upgrade & Maintenance
+
+Upgrades are performed via multisig Safe transactions generated by `scripts/SafeDeploy.ts`. Propose the new deployments to `SAFE_ADDRESS` and collect approvals before execution.
 
 ---
 
