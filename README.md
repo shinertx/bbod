@@ -30,7 +30,7 @@ The repository also ships monitoring and automation tools for production deploym
 
 | Contract | Purpose |
 |---------|---------|
-| `BlobFeeOracle` | 3-of-N push oracle storing the blob base fee once enough feeders agree. |
+| `BlobFeeOracle` | 3-of-N push oracle that records the fee signed by a quorum of feeders. |
 | `BlobOptionDesk` | Fully collateralized call options on future blob fees. |
 | `CommitRevealBSP` | Hourly parimutuel market using commit-reveal mechanics. |
 | `BaseBlobVault` | Shared event helpers for settlement. |

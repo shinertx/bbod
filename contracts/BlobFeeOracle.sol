@@ -11,8 +11,9 @@ using MessageHashUtils for bytes32;
  * @title BlobFeeOracle
  * @notice Simple 3-of-N push-oracle for the blob base-fee (denominated in gwei)
  *         Signers submit fee observations once per 12-second slot.  When the
- *         configured quorum is reached the contract stores the arithmetic mean
- *         of the submitted observations as the canonical fee for that slot.
+ *         configured quorum is reached the oracle records the fee contained in
+ *         the signed message (one of the submitted observations) as the
+ *         canonical value for that slot.
  *
  *         To keep gas costs predictable the implementation deliberately avoids
  *         dynamic arrays in storage.  Instead, a bit-mask is used to keep track
