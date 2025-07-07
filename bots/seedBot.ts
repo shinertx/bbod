@@ -28,8 +28,8 @@ const desk = new ethers.Contract(
 const pm = new ethers.Contract(
   process.env.BSP!,
   [
-    "function betHi() payable",
-    "function betLo() payable",
+    "function commit(bytes32) payable",
+    "function reveal(uint8,bytes32)"
   ],
   writer
 );
@@ -76,13 +76,36 @@ async function tick(): Promise<void> {
     // If the series already exists the `create` call reverts – ignore.
   }
 
-  // Seed the parimutuel pools with tiny stakes so that both sides are visible.
+  // Seed the parimutuel pools with tiny stakes using commit-reveal.
   const stake = ethers.parseEther("0.05");
   try {
-    await (await pm.betHi({ value: stake })).wait();
-    await (await pm.betLo({ value: stake })).wait();
+    const saltHi = ethers.randomBytes(32);
+    const saltLo = ethers.randomBytes(32);
+    const hHi = ethers.solidityPackedKeccak256([
+      "address",
+      "uint8",
+      "bytes32"
+    ], [writer.address, 0, saltHi]);
+    const hLo = ethers.solidityPackedKeccak256([
+      "address",
+      "uint8",
+      "bytes32"
+    ], [writer.address, 1, saltLo]);
+
+    await (await pm.commit(hHi, { value: stake })).wait();
+    await (await pm.commit(hLo, { value: stake })).wait();
     stakeGauge.inc(Number(ethers.formatEther(stake)) * 2);
     console.log(`seeded pools with 0.05 ETH on both sides`);
+
+    setTimeout(async () => {
+      try {
+        await (await pm.reveal(0, saltHi)).wait();
+        await (await pm.reveal(1, saltLo)).wait();
+        console.log(`revealed seed bets`);
+      } catch (err) {
+        console.error("seed reveal error", err);
+      }
+    }, 305_000);
   } catch (err) {
     console.error("seed liquidity error", err);
   }
