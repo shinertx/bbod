@@ -134,6 +134,10 @@ SAFE_ADDRESS=0xSAFE_ADDRESS
    ```bash
    pnpm --prefix frontend build && pnpm --prefix frontend start
    ```
+## Deployment Addresses
+
+Official contract addresses will be published in [deployments/README.md](deployments/README.md) once deployments to Sepolia and mainnet are finalized.
+
 
 ---
 
