@@ -2,7 +2,6 @@
 pragma solidity ^0.8.23;
 import "forge-std/Script.sol";
 import "../contracts/BlobOptionDesk.sol";
-import "../contracts/BlobParimutuel.sol";
 import "../contracts/BlobFeeOracle.sol";
 
 contract Deploy is Script {
@@ -18,9 +17,7 @@ contract Deploy is Script {
         }
         require(oracle != address(0), "oracle required");
         BlobOptionDesk desk = new BlobOptionDesk(oracle);
-        BlobParimutuel pm  = new BlobParimutuel(oracle);
         console.log("BBOD:", address(desk));
-        console.log("BSP :", address(pm));
         vm.stopBroadcast();
     }
 }

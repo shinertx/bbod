@@ -2,8 +2,8 @@
 
 Blob Edge Stack is a decentralized derivatives suite built around Ethereum's EIP-4844 blob base fee. It contains two main on-chain systems and a collection of off-chain bots and daemons:
 
-* **BBOD** – `EscrowedSeriesOptionDesk`: fully collateralized options on future blob fees.
-* **BSP** – `BlobParimutuel`: hourly betting market with permissionless settlement.
+* **BBOD** – `BlobOptionDesk`: fully collateralized options on future blob fees.
+* **BSP** – `CommitRevealBSP`: hourly betting market with commit-reveal settlement.
 * **BlobFeeOracle** – lightweight push oracle for blob fee observations.
 
 The repository also ships monitoring and automation tools for production deployment.
@@ -31,9 +31,8 @@ The repository also ships monitoring and automation tools for production deploym
 | Contract | Purpose |
 |---------|---------|
 | `BlobFeeOracle` | 3-of-N push oracle storing the blob base fee once enough feeders agree. |
-| `EscrowedSeriesOptionDesk` | Writer-funded call options with per-series collateral buckets. |
-| `BlobOptionDesk` | Legacy option desk used in tests; demonstrates fixed pricing. |
-| `BlobParimutuel` | Hourly parimutuel market with permissionless settlement. |
+| `BlobOptionDesk` | Fully collateralized call options on future blob fees. |
+| `CommitRevealBSP` | Hourly parimutuel market using commit-reveal mechanics. |
 | `BaseBlobVault` | Shared event helpers for settlement. |
 | `IBlobBaseFee` | Interface used by both BBOD and BSP to query the fee. |
 
@@ -49,8 +48,8 @@ Create a `.env` file (see `.env.example`) and populate the following variables:
 | `ORACLE_KEYS` | Comma separated private keys used by `oracleBot.ts` for EIP-712 signatures |
 | `ORACLE` | Address of the deployed `BlobFeeOracle` |
 | `BLOB_ORACLE` | Same as `ORACLE` for forge scripts |
-| `BSP` | Address of the deployed `BlobParimutuel` |
-| `BBOD` | Address of the deployed `EscrowedSeriesOptionDesk` |
+| `BSP` | Address of the deployed `CommitRevealBSP` |
+| `BBOD` | Address of the deployed `BlobOptionDesk` |
 | `REDIS` | Redis connection string (for daemon and WebSocket bridge) |
 | `BEACON` | Fallback beacon API endpoint for blob fees |
 | `WS_PORT` | Port for the local WebSocket bridge |
