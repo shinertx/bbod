@@ -63,9 +63,9 @@ Create a `.env` file (see `.env.example`) and populate the following variables:
 | `NEXT_PUBLIC_BBOD`  | Deployed BBOD address used by the frontend                                               |
 | `NEXT_PUBLIC_WS`    | WebSocket URL consumed by the frontend                                                   |
 | `NEXT_PUBLIC_ALERT` | URL for frontend alert API                                                               |
-| `SAFE_ADDRESS`      | Safe address for the Safe deployment script                                              |
+| `SAFE_ADDRESS`      | Address of your Gnosis Safe used by the Safe deployment script                                              |
 
-The `NEXT_PUBLIC_*` variables are consumed by the frontend. `SAFE_ADDRESS` is needed for the Safe deployment script.
+The `NEXT_PUBLIC_*` variables are consumed by the frontend. `SAFE_ADDRESS` is needed for the Safe deployment script. Set this to the address of your multisig Safe (version 1.4.x or newer). Any transactions proposed by the script must be confirmed by the required number of Safe owners before execution.
 Example:
 
 ```bash
@@ -110,10 +110,15 @@ SAFE_ADDRESS=0xSAFE_ADDRESS
    ```
 4. **Deploy contracts**
    ```bash
-   source .env
-   forge script script/Deploy.s.sol --fork-url $RPC --broadcast
-   # record the BBOD/BSP/oracle addresses and update .env
-   ```
+ source .env
+ forge script script/Deploy.s.sol --fork-url $RPC --broadcast
+ # record the BBOD/BSP/oracle addresses and update .env
+ ```
+  To deploy using a multisig Safe run:
+  ```bash
+  pnpm ts-node scripts/SafeDeploy.ts
+  ```
+  The script will queue transactions to `SAFE_ADDRESS`. Approvals from the Safe owners must be collected before execution.
 5. **Start daemons/bots**
    ```bash
    pnpm ts-node daemon/wsBridge.ts
