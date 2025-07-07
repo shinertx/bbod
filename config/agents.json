@@ -1,0 +1,149 @@
+{
+  "agents": [
+    {
+      "name": "CI_Agent",
+      "role": "Run lint, formatting, and unit/fuzz tests on every code change.",
+      "tools": ["git", "shell", "forge", "pnpm"],
+      "io": {
+        "input": {"branch": "string"},
+        "output": {"status": "pass|fail", "logs": "string"}
+      },
+      "instructions": "Checkout the given branch, execute `pnpm lint`, `pnpm format`, and `forge test -vv`. Return status and logs. Block merge if any step fails.",
+      "guardrails": ["use temp clones", "fail fast on test errors", "no mainnet deploys"],
+      "kpi_hooks": ["test_pass_rate", "avg_test_duration"]
+    },
+    {
+      "name": "Deploy_Agent",
+      "role": "Build contracts and push deployments using Safe-controlled wallets.",
+      "tools": ["forge", "hardhat", "ethers.js", "safe-core-sdk"],
+      "io": {
+        "input": {"network": "string", "env": "path"},
+        "output": {"addresses": {"oracle": "string", "desk": "string", "bsp": "string"}, "txHashes": ["string"]}
+      },
+      "instructions": "Compile with Foundry, deploy via Safe using scripts/SafeDeploy.ts. Append new addresses to deployments/README.md. Verify contracts on Etherscan.",
+      "guardrails": ["dry-run first", "confirm Safe multisig approvals", "record tx hashes"],
+      "kpi_hooks": ["deploy_success", "time_to_deploy"]
+    },
+    {
+      "name": "OracleFeeder_Agent",
+      "role": "Push blob base fee observations to BlobFeeOracle every 12 seconds.",
+      "tools": ["ethers.js", "prom-client"],
+      "io": {
+        "input": {"rpcUrl": "string", "oracleKeys": ["string"], "oracleAddress": "string"},
+        "output": {"txHash": "string", "feeGwei": "number"}
+      },
+      "instructions": "Fetch `eth_blobBaseFee`, sign with all ORACLE_KEYS, and call `oracle.push`. Expose metrics via prom-client.",
+      "guardrails": ["skip if RPC fails", "validate fee within 2x previous value"],
+      "kpi_hooks": ["push_latency", "push_error_rate"]
+    },
+    {
+      "name": "BlobDaemon_Agent",
+      "role": "Continuously fetch blob fees, publish to Redis, and settle BSP rounds.",
+      "tools": ["node-fetch", "ethers.js", "redis"],
+      "io": {
+        "input": {"rpcUrl": "string", "beaconUrl": "string", "bspAddress": "string"},
+        "output": {"publishedFee": "number", "settleTx": "string"}
+      },
+      "instructions": "Every 12s get blob fee from RPC or beacon, publish to Redis channel `blobFee`, and call `bsp.settle()` at each hour boundary.",
+      "guardrails": ["retry on RPC failure", "bound gas limit to 200k", "health endpoint on METRICS_PORT"],
+      "kpi_hooks": ["fee_publish_rate", "settle_success"]
+    },
+    {
+      "name": "CommitReveal_Agent",
+      "role": "Automate commit and reveal steps for each BSP round.",
+      "tools": ["ethers.js", "redis"],
+      "io": {
+        "input": {"bspAddress": "string", "redisUrl": "string"},
+        "output": {"commitTx": "string", "revealTx": "string"}
+      },
+      "instructions": "Subscribe to `blobFee` and `nextThreshold` topics, commit new round hashes, and reveal when `Settled` events fire.",
+      "guardrails": ["track pending rounds in memory", "skip reveal if data missing"],
+      "kpi_hooks": ["commit_success", "reveal_delay"]
+    },
+    {
+      "name": "Settlement_Agent",
+      "role": "Fallback keeper that calls `settle()` when a round is due.",
+      "tools": ["ethers.js"],
+      "io": {
+        "input": {"bspAddress": "string"},
+        "output": {"txHash": "string"}
+      },
+      "instructions": "Every 12s check `rounds(cur)`; if closeTs has passed by >12s, send `settle()`.",
+      "guardrails": ["ignore revert if not ready", "gas limit 200k"],
+      "kpi_hooks": ["settle_attempts", "settle_bounty_collected"]
+    },
+    {
+      "name": "ThresholdManager_Agent",
+      "role": "Adjust next BSP threshold based on median fee over a 1h window.",
+      "tools": ["ethers.js"],
+      "io": {
+        "input": {"bspAddress": "string", "rpcUrl": "string"},
+        "output": {"txHash": "string", "newThreshold": "number"}
+      },
+      "instructions": "Listen for new blocks, compute rolling median of blob fees, and every ~5 min call `setNextThreshold`.",
+      "guardrails": ["threshold between 5 and 200 gwei", "error logging"],
+      "kpi_hooks": ["threshold_updates", "median_calculation_latency"]
+    },
+    {
+      "name": "IVTuning_Agent",
+      "role": "Periodically adjust option pricing parameter `k` on BBOD.",
+      "tools": ["ethers.js"],
+      "io": {
+        "input": {"bbodAddress": "string"},
+        "output": {"txHash": "string", "newK": "string"}
+      },
+      "instructions": "Read current `k`, move 10% toward target, and optionally open a new option series if none exists.",
+      "guardrails": ["only run hourly", "cap change per tick", "dry-run toggle"],
+      "kpi_hooks": ["iv_updates", "k_value"]
+    },
+    {
+      "name": "SeedLiquidity_Agent",
+      "role": "Create option series and seed parimutuel pools with small stakes.",
+      "tools": ["ethers.js", "prom-client"],
+      "io": {
+        "input": {"bbodAddress": "string", "bspAddress": "string"},
+        "output": {"seriesId": "number", "seedTx": ["string"]}
+      },
+      "instructions": "Hourly compute series id, call `desk.create` if missing, then commit/reveal 0.05 ETH on both sides of BSP.",
+      "guardrails": ["ignore if series exists", "delay reveals by ~5min"],
+      "kpi_hooks": ["liquidity_seeded", "series_opened"]
+    },
+    {
+      "name": "WSBridge_Agent",
+      "role": "Relay Redis pub/sub channels to WebSocket clients for the frontend.",
+      "tools": ["socket.io", "redis"],
+      "io": {
+        "input": {"redisUrl": "string", "wsPort": "number"},
+        "output": {"status": "string"}
+      },
+      "instructions": "Subscribe to `blobFee` and emit messages via socket.io server on WS_PORT.",
+      "guardrails": ["CORS *", "restart on disconnect"],
+      "kpi_hooks": ["ws_client_count", "message_rate"]
+    },
+    {
+      "name": "Monitoring_Agent",
+      "role": "Collect Prometheus metrics and trigger alerts on outages or drawdown breaches.",
+      "tools": ["Prometheus", "Grafana", "Slack/email webhook"],
+      "io": {
+        "input": {"prometheusUrl": "string", "alertChannels": ["string"]},
+        "output": {"alertsSent": "number"}
+      },
+      "instructions": "Scrape /metrics from all agents, evaluate alert.rules, and notify channels on failures or >5% drawdown.",
+      "guardrails": ["rate-limit notifications", "kill switch via ops/KILLSWITCH.md"],
+      "kpi_hooks": ["uptime_percent", "alert_count"]
+    },
+    {
+      "name": "Manager_Agent",
+      "role": "Coordinate all specialized agents, handle key rotation, and escalate on failures.",
+      "tools": ["cron", "pm2", "redis", "git"],
+      "io": {
+        "input": {"configPath": "string"},
+        "output": {"agentStatuses": "object"}
+      },
+      "instructions": "Launch or restart agents via PM2, rotate secrets per schedule, and pause operations if critical guardrails trigger.",
+      "guardrails": ["use SAFE_ADDRESS for privileged actions", "respect GO_LIVE_CHECKLIST before scaling"],
+      "kpi_hooks": ["overall_uptime", "error_rate"]
+    }
+  ],
+  "roadmap": "Set up the CI_Agent and Deploy_Agent to enforce the AGENTS.md workflow. Launch the Manager_Agent on a secure server with access to RPC, Redis, and Prometheus. Each specialized agent (OracleFeeder, BlobDaemon, CommitReveal, Settlement, ThresholdManager, IVTuning, SeedLiquidity, WSBridge) runs under PM2 and reports metrics to Prometheus for centralized Monitoring_Agent alerting. Follow ops guides for go-live checks and kill-switch procedures, ensuring signer keys and Safe multisig approvals are secured. This automated stack will continuously test, deploy, monitor, and operate BBOD with minimal human intervention while maintaining full auditability and safety controls."
+} 

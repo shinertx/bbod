@@ -1,4 +1,4 @@
-version: "3"
+version: "3.9"
 services:
   prometheus:
     image: prom/prometheus
@@ -28,4 +28,68 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379" 
+      - "6379:6379"
+
+  oracle1:
+    build: ../
+    command: pnpm ts-node daemon/oracleBot.ts
+    env_file: ../.env
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${METRICS_PORT:-9464}"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  blobd:
+    build: ../
+    command: pnpm ts-node daemon/blobDaemon.ts
+    env_file: ../.env
+    restart: always
+    depends_on: [redis]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${METRICS_PORT:-9464}"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  commit-reveal:
+    build: ../
+    command: pnpm ts-node bots/commitRevealBot.ts
+    env_file: ../.env
+    restart: always
+    depends_on: [redis]
+
+  threshold:
+    build: ../
+    command: pnpm ts-node bots/thresholdBot.ts
+    env_file: ../.env
+    restart: always
+    depends_on: [redis]
+
+  seed:
+    build: ../
+    command: pnpm ts-node bots/seedBot.ts
+    env_file: ../.env
+    restart: always
+    depends_on: [redis]
+
+  iv:
+    build: ../
+    command: pnpm ts-node bots/ivBot.ts
+    env_file: ../.env
+    restart: always
+    depends_on: [redis]
+
+  wsbridge:
+    build: ../
+    command: pnpm ts-node daemon/wsBridge.ts
+    env_file: ../.env
+    ports: ["${WS_PORT:-6380}:${WS_PORT:-6380}"]
+    restart: always
+    depends_on: [redis]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${WS_PORT:-6380}/health" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3 
