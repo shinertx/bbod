@@ -60,7 +60,7 @@ contract CapSpikeOptionTest is Test {
         oracle.push(BlobFeeOracle.FeedMsg({fee: fee, deadline: dl}), sigs); // fee higher than cap
 
         desk.settle(1);
-        (,,, , uint256 payWei,,) = desk.series(1);
+        (,,, uint256 sold, uint256 payWei, ) = desk.series(1);
         assertEq(payWei, (cap - strike) * 1 gwei);
     }
 } 

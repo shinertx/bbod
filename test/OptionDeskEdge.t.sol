@@ -14,6 +14,7 @@ contract OptionDeskEdge is Test {
     uint256 PK = 0xA11CE;
     address signer;
     address buyer = address(0xB0B);
+    bytes32 DOMAIN;
 
     function setUp() public {
         signer = vm.addr(PK);
@@ -21,6 +22,15 @@ contract OptionDeskEdge is Test {
         signers[0] = signer;
         oracle = new BlobFeeOracle(signers, 1);
         desk = new BlobOptionDesk(address(oracle));
+        DOMAIN = keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256(bytes("BlobFeeOracle")),
+                keccak256(bytes("1")),
+                block.chainid,
+                address(oracle)
+            )
+        );
     }
 
     function testBuyCutoff() public {
@@ -30,7 +40,7 @@ contract OptionDeskEdge is Test {
         uint256 p = desk.premium(50, expiry);
         vm.deal(buyer, p);
         vm.prank(buyer);
-        vm.expectRevert("too-late-to-buy");
+        vm.expectRevert(bytes("too-late-to-buy"));
         desk.buy{value: p}(1, 1);
     }
 
@@ -43,21 +53,12 @@ contract OptionDeskEdge is Test {
         assertGt(newP, oldP, "premium not updated");
     }
 
-    bytes32 constant DOMAIN_SEPARATOR = keccak256(
-        abi.encode(
-            keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-            keccak256(bytes("BlobFeeOracle")),
-            keccak256(bytes("1")),
-            block.chainid,
-            address(oracle)
-        )
-    );
     bytes32 constant TYPEHASH = keccak256("FeedMsg(uint256 fee,uint256 deadline)");
 
     function _push(uint256 fee) internal {
         uint256 dl = block.timestamp + 30;
         bytes32 structHash = keccak256(abi.encode(TYPEHASH, fee, dl));
-        bytes32 digest = MessageHashUtils.toTypedDataHash(DOMAIN_SEPARATOR, structHash);
+        bytes32 digest = MessageHashUtils.toTypedDataHash(DOMAIN, structHash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest);
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = abi.encodePacked(r, s, v);
@@ -82,7 +83,7 @@ contract OptionDeskEdge is Test {
         vm.warp(expiry + 1);
         _push(50);
         desk.settle(7);
-        vm.expectRevert("grace");
+        vm.expectRevert(bytes("grace"));
         desk.withdrawMargin(7);
     }
 
@@ -110,7 +111,7 @@ contract OptionDeskEdge is Test {
         vm.warp(expiry + 1);
         _push(90);
         desk.settle(8);
-        vm.expectRevert("ITM");
+        vm.expectRevert(bytes("ITM"));
         desk.sweepMargin(8);
     }
 }

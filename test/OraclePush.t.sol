@@ -10,22 +10,23 @@ using MessageHashUtils for bytes32;
 contract OraclePushTest is Test {
     BlobFeeOracle oracle;
     address signer = address(this);
+    bytes32 DOMAIN_SEPARATOR;
 
     function setUp() public {
         address[] memory signers = new address[](1);
         signers[0] = signer;
         oracle = new BlobFeeOracle(signers, 1);
+        DOMAIN_SEPARATOR = keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256(bytes("BlobFeeOracle")),
+                keccak256(bytes("1")),
+                block.chainid,
+                address(oracle)
+            )
+        );
     }
 
-    bytes32 constant DOMAIN_SEPARATOR = keccak256(
-        abi.encode(
-            keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-            keccak256(bytes("BlobFeeOracle")),
-            keccak256(bytes("1")),
-            block.chainid,
-            address(oracle)
-        )
-    );
     bytes32 constant TYPEHASH = keccak256("FeedMsg(uint256 fee,uint256 deadline)");
 
     function _sig(uint256 fee, uint256 dl) internal view returns(bytes[] memory sigs){

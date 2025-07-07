@@ -12,7 +12,7 @@ contract ThresholdRevealEnforcement is Test {
     function testSettleRevertsIfUnrevealed() public {
         // commit threshold for next round (round 2)
         bytes32 h = keccak256(abi.encodePacked(uint256(50), uint256(1)));
-        pm.commit(h);
+        pm.commitThreshold(h);
 
         // settle round 1 (allowed even if next round unrevealed)
         (, , uint256 revealTs1,,,,,,,,) = pm.rounds(1);
@@ -28,7 +28,7 @@ contract ThresholdRevealEnforcement is Test {
 
     function testSettleAfterTimeoutUsesPrevThreshold() public {
         bytes32 h = keccak256(abi.encodePacked(uint256(75), uint256(1)));
-        pm.commit(h);
+        pm.commitThreshold(h);
 
         (, , uint256 revealTs1,,,,,,,,) = pm.rounds(1);
         vm.warp(revealTs1 + 1);

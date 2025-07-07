@@ -13,6 +13,7 @@ contract BBODSweep is Test {
     BlobFeeOracle oracle;
     uint256 PK = 0xA11CE;
     address signer;
+    bytes32 DOMAIN;
 
     function setUp() public {
         signer = vm.addr(PK);
@@ -20,17 +21,17 @@ contract BBODSweep is Test {
         signers[0] = signer;
         oracle = new BlobFeeOracle(signers, 1);
         desk = new BlobOptionDesk(address(oracle));
+        DOMAIN = keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256(bytes("BlobFeeOracle")),
+                keccak256(bytes("1")),
+                block.chainid,
+                address(oracle)
+            )
+        );
     }
 
-    bytes32 constant DOMAIN = keccak256(
-        abi.encode(
-            keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-            keccak256(bytes("BlobFeeOracle")),
-            keccak256(bytes("1")),
-            block.chainid,
-            address(oracle)
-        )
-    );
     bytes32 constant TYPEHASH = keccak256("FeedMsg(uint256 fee,uint256 deadline)");
 
     function _push(uint256 fee) internal {

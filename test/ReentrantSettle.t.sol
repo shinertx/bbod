@@ -5,7 +5,7 @@ import "../contracts/CommitRevealBSP.sol";
 
 contract Attacker {
     CommitRevealBSP pm;
-    constructor(address p) { pm = CommitRevealBSP(p); }
+    constructor(address p) { pm = CommitRevealBSP(payable(p)); }
     receive() external payable {
         try pm.settle() {} catch {}
     }
@@ -25,7 +25,7 @@ contract ReentrantSettle is Test {
         vm.warp(block.timestamp + 301);
         vm.prank(address(atk));
         pm.reveal(CommitRevealBSP.Side.Hi, bytes32("s"));
-        (, , uint256 revealTs,,,,,,,,) = pm.rounds(1);
+        (, , uint256 revealTs, , , , , , , , ) = pm.rounds(1);
         vm.warp(revealTs + 1);
         vm.prank(address(atk));
         vm.expectRevert();

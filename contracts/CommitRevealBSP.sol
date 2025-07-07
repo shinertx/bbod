@@ -109,7 +109,7 @@ contract CommitRevealBSP is ReentrancyGuard {
         require(msg.value >= MIN_BET, "dust");
         require(tickets[cur][msg.sender].commit == 0, "dup");
 
-        tickets[cur][msg.sender] = Ticket({commit: h, amount: msg.value});
+        tickets[cur][msg.sender] = Ticket({commit: h, amount: msg.value, side: Side.Hi});
         emit Commit(cur, msg.sender, msg.value);
     }
 
@@ -251,7 +251,7 @@ contract CommitRevealBSP is ReentrancyGuard {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Commit hash(threshold, nonce) for the next round.
-    function commit(bytes32 h) external onlyOwner {
+    function commitThreshold(bytes32 h) external onlyOwner {
         require(commitRound == 0, "pending");
         commitRound = cur + 1;
         commitTs = block.timestamp;
