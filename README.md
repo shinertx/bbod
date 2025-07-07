@@ -148,7 +148,9 @@ All contracts are permissionless once deployed but rely on timely feeds to remai
 Each bot requires a stable RPC endpoint. Aim for providers with >99.9% uptime and rate limits of at least 5-10 requests per second. Examples include Alchemy, Infura or Ankr. Where possible use separate RPC keys per bot to avoid throttling.
 
 **Risk Warning:** Options and parimutuel betting are inherently risky. Smart contract bugs, oracle failures or extreme volatility could lead to loss of funds. Run extensive tests on a fork before using real value.
-
+## Deployments
+Official contract addresses will be maintained in [deployments/README.md](deployments/README.md).
+Sepolia deployments are underway and mainnet addresses are not yet finalized.
 ---
 
 ## FAQ & Troubleshooting
