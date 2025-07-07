@@ -1,4 +1,4 @@
-import { ethers } from "ethers";
+import { ethers, TypedDataDomain, TypedDataField } from "ethers";
 import client from "prom-client";
 import "dotenv/config";
 
@@ -11,16 +11,22 @@ import "dotenv/config";
  */
 
 const provider = new ethers.JsonRpcProvider(process.env.RPC!);
-const wallet   = new ethers.Wallet(process.env.PRIV!, provider);
+const oracleKeys = process.env.ORACLE_KEYS!.split(",");
+const signers = oracleKeys.map((k) => new ethers.Wallet(k, provider));
 
 const oracle = new ethers.Contract(
   process.env.ORACLE!,
   ["function push((uint256 fee,uint256 deadline),bytes[] sigs) external"],
-  wallet
+  signers[0],
 );
 
-let domain: any;
-const types = { FeedMsg: [{ name: "fee", type: "uint256" }, { name: "deadline", type: "uint256" }] };
+let domain: TypedDataDomain;
+const types: Record<string, Array<TypedDataField>> = {
+  FeedMsg: [
+    { name: "fee", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ],
+};
 
 (async () => {
   const net = await provider.getNetwork();
@@ -32,14 +38,18 @@ const types = { FeedMsg: [{ name: "fee", type: "uint256" }, { name: "deadline", 
   };
 })();
 
-const feeGauge = new client.Gauge({ name: "oracle_fee_gwei", help: "Last fee pushed (gwei)" });
+const feeGauge = new client.Gauge({
+  name: "oracle_fee_gwei",
+  help: "Last fee pushed (gwei)",
+});
 
 async function publish() {
   try {
     const fee: number = await provider.send("eth_blobBaseFee", []);
     const message = { fee, deadline: Math.floor(Date.now() / 1000) + 30 };
-    const sig = await wallet.signTypedData(domain, types, message);
-    const tx = await oracle.push(message, [sig]);
+    const digest = ethers.TypedDataEncoder.hash(domain, types, message);
+    const sigs = signers.map((s) => s.signingKey.sign(digest).serialized);
+    const tx = await oracle.push(message, sigs);
     feeGauge.set(fee);
     console.log(`pushed ${fee} gwei -> ${tx.hash}`);
   } catch (err) {
@@ -48,4 +58,4 @@ async function publish() {
 }
 
 setInterval(publish, 12_000);
-console.log("feedA running…"); 
+console.log("feedA running…");
