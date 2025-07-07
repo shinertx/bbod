@@ -124,7 +124,7 @@ contract BlobOptionDesk is ReentrancyGuard {
         seriesSettled[id] = true;
 
         if (bounty > 0) {
-            payable(msg.sender).transfer(bounty);
+            _safeSend(msg.sender, bounty);
             emit SettleBounty(id, msg.sender, bounty);
         }
 
@@ -133,7 +133,7 @@ contract BlobOptionDesk is ReentrancyGuard {
             uint256 bal = address(this).balance;
             if (refund > bal) refund = bal;
             s.margin = 0;
-            payable(writer).transfer(refund);
+            _safeSend(writer, refund);
         }
     }
     function exercise(uint256 id) external nonReentrant {
@@ -146,7 +146,7 @@ contract BlobOptionDesk is ReentrancyGuard {
         require(s.margin >= due, "margin");
         s.sold -= qty;
         s.margin -= due;
-        payable(msg.sender).transfer(due);
+        _safeSend(msg.sender, due);
     }
 
     /// @notice Withdraw writer margin once a series is settled.
@@ -160,7 +160,7 @@ contract BlobOptionDesk is ReentrancyGuard {
         uint256 amt = s.margin;
         require(amt > 0, "none");
         s.margin = 0;
-        payable(writer).transfer(amt);
+        _safeSend(writer, amt);
     }
 
     /// @notice Grace period after expiry before writer can reclaim margin.
@@ -175,16 +175,16 @@ contract BlobOptionDesk is ReentrancyGuard {
         uint256 amt = s.margin;
         require(amt > 0, "none");
         s.margin = 0;
-        payable(writer).transfer(amt);
+        _safeSend(writer, amt);
     }
 
     /// @notice Withdraw unlocked premiums for a single series.
-    function withdrawPremium(uint256 id) external {
+    function withdrawPremium(uint256 id) external nonReentrant {
         require(msg.sender == writer, "!auth");
         require(unlockTs[id] != 0 && block.timestamp >= unlockTs[id], "locked");
         uint256 amt = premCollected[id];
         premCollected[id] = 0;
-        payable(writer).transfer(amt);
+        _safeSend(writer, amt);
     }
 
     /// @notice Top up margin for a specific series.  Allows writer (or anyone)
@@ -196,4 +196,13 @@ contract BlobOptionDesk is ReentrancyGuard {
     }
 
     uint256 public constant SETTLE_BOUNTY_BP = 10; // 0.10 %
+
+    /*//////////////////////////////////////////////////////////////////////////
+                               SAFE ETH TRANSFER
+    //////////////////////////////////////////////////////////////////////////*/
+
+    function _safeSend(address to, uint256 amount) internal {
+        (bool ok, ) = payable(to).call{value: amount}("");
+        require(ok, "xfer");
+    }
 } 

@@ -21,6 +21,7 @@ contract CommitRevealBSP is ReentrancyGuard {
     struct Ticket {
         bytes32 commit;
         uint256 amount;
+        Side    side;    // side revealed by user
     }
 
     struct Round {
@@ -119,7 +120,9 @@ contract CommitRevealBSP is ReentrancyGuard {
             R.loPool += T.amount;
         }
 
+        // persist revealed side to prevent later spoofing
         T.commit = bytes32(0); // mark as revealed
+        T.side   = side;
         emit Reveal(cur, msg.sender, side, T.amount);
     }
 
@@ -167,8 +170,8 @@ contract CommitRevealBSP is ReentrancyGuard {
         uint256 rakeAmount = gross * RAKE_BP / 10_000;
         R.rake = rakeAmount;
         R.bounty = bounty;
-        if (bounty > 0) payable(msg.sender).transfer(bounty);
-        payable(owner).transfer(rakeAmount);
+        if (bounty > 0) _safeSend(msg.sender, bounty);
+        _safeSend(owner, rakeAmount);
 
         emit Settled(cur, feeGwei, rakeAmount, bounty);
 
@@ -181,7 +184,7 @@ contract CommitRevealBSP is ReentrancyGuard {
                                  POST-SETTLEMENT
     //////////////////////////////////////////////////////////////////////////*/
 
-    function claim(uint256 id, Side side, bytes32 salt) external nonReentrant {
+    function claim(uint256 id, Side side, bytes32 /*salt*/) external nonReentrant {
         Round storage R = rounds[id];
         require(R.settled, "unsettled");
 
@@ -195,17 +198,19 @@ contract CommitRevealBSP is ReentrancyGuard {
                 // round has no winners – refund
                 uint256 refund = T.amount * 995 / 1000;
                 tickets[id][msg.sender].amount = 0;
-                payable(msg.sender).transfer(refund);
+                _safeSend(msg.sender, refund);
                 emit Refund(id, msg.sender, refund);
             } else {
-                _payout(id, msg.sender, side, salt);
+                // ensure user cannot spoof a different side after reveal
+                require(tickets[id][msg.sender].side == side, "side-mismatch");
+                _payout(id, msg.sender);
             }
         } else {
             // Non-revealed ticket forfeits full stake to house after grace
             require(block.timestamp > R.revealTs + GRACE_NONREVEAL, "grace");
             uint256 burn = T.amount;
             delete tickets[id][msg.sender];
-            payable(owner).transfer(burn);
+            _safeSend(owner, burn);
             emit Refund(id, msg.sender, 0);
         }
     }
@@ -214,8 +219,9 @@ contract CommitRevealBSP is ReentrancyGuard {
                                     HELPERS
     //////////////////////////////////////////////////////////////////////////*/
 
-    function _payout(uint256 id, address who, Side side, bytes32 /*salt*/ ) internal {
+    function _payout(uint256 id, address who) internal {
         Round storage R = rounds[id];
+        Side side = tickets[id][who].side;
         bool hiWin = R.feeResult >= R.thresholdGwei;
         bool win = (hiWin && side == Side.Hi) || (!hiWin && side == Side.Lo);
         require(win, "lose");
@@ -229,7 +235,7 @@ contract CommitRevealBSP is ReentrancyGuard {
 
         uint256 pay = (share * total) / poolWin;
         require(pay > 0, "dust");
-        payable(who).transfer(pay);
+        _safeSend(who, pay);
         emit Payout(id, who, pay);
     }
 
@@ -262,7 +268,16 @@ contract CommitRevealBSP is ReentrancyGuard {
         require(R.settled && block.timestamp > R.revealTs + 30 days, "too-soon");
         uint256 tracked = R.hiPool + R.loPool;
         uint256 excess = address(this).balance > tracked ? address(this).balance - tracked : 0;
-        if (excess > 0) payable(owner).transfer(excess);
+        if (excess > 0) _safeSend(owner, excess);
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                                 SAFE ETH TRANSFER
+    //////////////////////////////////////////////////////////////////////////*/
+
+    function _safeSend(address to, uint256 amount) internal {
+        (bool ok, ) = payable(to).call{value: amount}("");
+        require(ok, "xfer");
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -288,7 +303,7 @@ contract CommitRevealBSP is ReentrancyGuard {
     }
 
     /*//////////////////////////////////////////////////////////////////////////
-                                 RECEIVE ETHER
+                                  RECEIVE ETHER
     //////////////////////////////////////////////////////////////////////////*/
 
     receive() external payable {}
