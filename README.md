@@ -36,6 +36,12 @@ The repository also ships monitoring and automation tools for production deploym
 | `BaseBlobVault` | Shared event helpers for settlement. |
 | `IBlobBaseFee` | Interface used by both BBOD and BSP to query the fee. |
 
+### Key Parameters
+
+- **BlobFeeOracle** – successive fee pushes may not deviate by more than 2x.
+- **CommitRevealBSP** – `REVEAL_TIMEOUT` of 15 minutes prevents threshold-freeze.
+- **BlobOptionDesk** – premium scale `k` defaults to `7e13`; margin withdrawal is possible after `GRACE_PERIOD` (1 day).
+
 
 ## Environment Variables
 

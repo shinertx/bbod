@@ -14,7 +14,8 @@ contract BlobOptionDesk is ReentrancyGuard {
     }
 
     address public immutable writer;
-    uint256 public k = 7e15;
+    /// @notice Premium scale factor. Tuned so one-hour options cost ~0.001 ETH.
+    uint256 public k = 7e13;
     IBlobBaseFee public immutable F;
 
     mapping(uint256=>Series) public series;
@@ -70,7 +71,7 @@ contract BlobOptionDesk is ReentrancyGuard {
         public view returns (uint256 timeValue, uint256 intrinsic)
     {
         uint256 T = expiry - block.timestamp;
-        uint256 sigma = 12e9;
+        uint256 sigma = 12e7; // scaled volatility proxy
         timeValue = k * sigma * sqrt((T) * 1e18 / 3600) / 1e18;
         uint256 feeNow = F.blobBaseFee();
         intrinsic = feeNow > strike ? (feeNow - strike) * 1 gwei : 0;
@@ -135,7 +136,7 @@ contract BlobOptionDesk is ReentrancyGuard {
             payable(writer).transfer(refund);
         }
     }
-    function exercise(uint256 id) external {
+    function exercise(uint256 id) external nonReentrant {
         Series storage s = series[id];
         require(seriesSettled[id], "unsettled");
         uint256 qty = bal[msg.sender][id];
@@ -152,12 +153,12 @@ contract BlobOptionDesk is ReentrancyGuard {
     ///         If the series expired out-of-the-money the margin can be
     ///         reclaimed immediately.  For in-the-money expiries the writer
     ///         must wait one day to give holders time to exercise.
-    function withdrawMargin(uint256 id) external {
+    function withdrawMargin(uint256 id) external nonReentrant {
         Series storage s = series[id];
         require(msg.sender == writer, "!w");
         require(seriesSettled[id], "unsettled");
         require(
-            s.payWei == 0 || block.timestamp > s.expiry + 1 days,
+            s.payWei == 0 || block.timestamp > s.expiry + GRACE_PERIOD,
             "grace"
         );
         uint256 amt = s.margin;
@@ -166,15 +167,20 @@ contract BlobOptionDesk is ReentrancyGuard {
         payable(writer).transfer(amt);
     }
 
-    uint256 public constant GRACE_PERIOD = 6 hours;
+    /// @notice Grace period after expiry before writer can reclaim ITM margin.
+    uint256 public constant GRACE_PERIOD = 1 days;
 
     /// @notice sweep remaining margin after all exercises or timeout
     function sweepMargin(uint256 id) external nonReentrant {
         Series storage s = series[id];
         require(msg.sender == writer, "!writer");
         require(seriesSettled[id], "unsettled");
-        require(s.payWei == 0, "ITM");
+        require(
+            s.payWei == 0 || block.timestamp > s.expiry + GRACE_PERIOD,
+            "ITM"
+        );
         uint256 amt = s.margin;
+        require(amt > 0, "none");
         s.margin = 0;
         payable(writer).transfer(amt);
     }

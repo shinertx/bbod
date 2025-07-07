@@ -66,6 +66,8 @@ contract CommitRevealBSP is ReentrancyGuard {
 
     bytes32  public thresholdCommit;
     uint256  public commitRound; // round the commit applies to
+    uint256  public commitTs;
+    uint256  public constant REVEAL_TIMEOUT = 15 minutes;
     uint256  public nextThreshold;
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -130,7 +132,13 @@ contract CommitRevealBSP is ReentrancyGuard {
         require(block.timestamp >= R.revealTs, "too early");
         require(!R.settled, "done");
         if (commitRound == cur) {
-            revert("threshold-not-revealed");
+            if (block.timestamp < R.revealTs + REVEAL_TIMEOUT) {
+                revert("threshold-not-revealed");
+            } else {
+                commitRound = 0;
+                thresholdCommit = 0;
+                nextThreshold = 0;
+            }
         }
 
         uint256 feeGwei = F.blobBaseFee();
@@ -229,6 +237,7 @@ contract CommitRevealBSP is ReentrancyGuard {
     function commit(bytes32 h) external onlyOwner {
         require(commitRound == 0, "pending");
         commitRound = cur + 1;
+        commitTs = block.timestamp;
         thresholdCommit = h;
         nextThreshold = 0;
     }
@@ -240,6 +249,7 @@ contract CommitRevealBSP is ReentrancyGuard {
         nextThreshold = thr;
         thresholdCommit = 0;
         commitRound = 0;
+        commitTs = 0;
     }
 
     /// @notice Sweep accumulated dust after settlement and long inactivity.
