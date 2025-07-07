@@ -1,0 +1,14 @@
+name: build-and-test
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with: { version: 8 }
+      - run: pnpm install
+      - run: pnpm lint
+      - run: pnpm format --check
+      - uses: foundry-rs/foundry-toolchain@v1
+      - run: forge test -vv

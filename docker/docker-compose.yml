@@ -1,31 +1,44 @@
-version: "3"
+version: "3.9"
 services:
-  prometheus:
-    image: prom/prometheus
-    volumes:
-      - "./prometheus:/etc/prometheus/"
-    command: ["--config.file=/etc/prometheus/prometheus.yml"]
-    ports:
-      - "9090:9090"
+  oracle1:
+    build: ../
+    command: pnpm ts-node daemon/oracleBot.ts
+    env_file: ../.env
+    restart: always
 
-  grafana:
-    image: grafana/grafana
-    ports:
-      - "3001:3000"
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    volumes:
-      - ./grafana-provisioning:/etc/grafana/provisioning
+  blobd:
+    build: ../
+    command: pnpm ts-node daemon/blobDaemon.ts
+    env_file: ../.env
+    restart: always
 
-  exporter:
-    build: ../bots
-    environment:
-      - RPC=${RPC}
-      - METRICS_PORT=9464
-    command: ["node", "thresholdBot.js"]  # replace with a dedicated exporter if you have one
+  commit-reveal:
+    build: ../
+    command: pnpm ts-node bots/commitRevealBot.ts
+    env_file: ../.env
+    restart: always
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379" 
+  threshold:
+    build: ../
+    command: pnpm ts-node bots/thresholdBot.ts
+    env_file: ../.env
+    restart: always
+
+  seed:
+    build: ../
+    command: pnpm ts-node bots/seedBot.ts
+    env_file: ../.env
+    restart: always
+
+  iv:
+    build: ../
+    command: pnpm ts-node bots/ivBot.ts
+    env_file: ../.env
+    restart: always
+
+  wsbridge:
+    build: ../
+    command: pnpm ts-node daemon/wsBridge.ts
+    env_file: ../.env
+    ports: ["${WS_PORT:-6380}:${WS_PORT:-6380}"]
+    restart: always

@@ -5,8 +5,9 @@
     "daemon": "tsx daemon/blobDaemon.ts",
     "ws": "tsx daemon/wsBridge.ts",
     "frontend": "pnpm --prefix frontend dev",
-    "lint": "eslint '**/*.ts'",
-    "format": "prettier -w '**/*.{ts,tsx,sol}'"
+    "start:agents": "ts-node scripts/launch_agents.ts",
+    "lint": "eslint '**/*.{ts,tsx}'",
+    "format": "prettier --check ."
   },
   "dependencies": {
     "ethers": "^6.9.0",
