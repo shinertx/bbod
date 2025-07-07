@@ -42,6 +42,14 @@ async function blobFeeGwei(): Promise<number> {
     let fee;
     try {
       fee = await blobFeeGwei();
+      if (lastFee > 0) {
+        const hi = lastFee * 2;
+        const lo = Math.floor(lastFee / 2);
+        if (fee > hi || fee < lo) {
+          console.warn("fee deviation too large", fee, "using", lastFee);
+          fee = lastFee;
+        }
+      }
       lastFee = fee;
     } catch (err) {
       console.error("blob fee fetch failed", err);

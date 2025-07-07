@@ -65,7 +65,9 @@ contract BSPFuzz is Test {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest);
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = abi.encodePacked(r, s, v);
-        oracle.push(BlobFeeOracle.FeedMsg({fee: finalFee, deadline: dl}), sigs);
+        BlobFeeOracle.FeedMsg[] memory msgs = new BlobFeeOracle.FeedMsg[](1);
+        msgs[0] = BlobFeeOracle.FeedMsg({fee: finalFee, deadline: dl});
+        oracle.push(msgs, sigs);
 
         pm.settle();
 
@@ -100,7 +102,9 @@ contract BSPFuzz is Test {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest2);
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = abi.encodePacked(r, s, v);
-        oracle.push(BlobFeeOracle.FeedMsg({fee: 50, deadline: dl2}), sigs);
+        BlobFeeOracle.FeedMsg[] memory msgs2 = new BlobFeeOracle.FeedMsg[](1);
+        msgs2[0] = BlobFeeOracle.FeedMsg({fee: 50, deadline: dl2});
+        oracle.push(msgs2, sigs);
         pm.settle();
 
         // reveal threshold for round 2
@@ -135,7 +139,9 @@ contract BSPFuzz is Test {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest3);
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = abi.encodePacked(r, s, v);
-        oracle.push(BlobFeeOracle.FeedMsg({fee: 100, deadline: dl3}), sigs);
+        BlobFeeOracle.FeedMsg[] memory msgs3 = new BlobFeeOracle.FeedMsg[](1);
+        msgs3[0] = BlobFeeOracle.FeedMsg({fee: 100, deadline: dl3});
+        oracle.push(msgs3, sigs);
         pm.settle();
 
         vm.warp(block.timestamp + pm.GRACE_NONREVEAL() + 1);

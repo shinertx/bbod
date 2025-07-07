@@ -31,7 +31,8 @@ contract BlobFeeOracle is IBlobBaseFee, EIP712 {
 
     /// @notice Emitted each time a new fee observation reaches quorum.
     /// @param feeGwei The blob base fee in gwei.
-    event Pushed(uint256 feeGwei);
+    /// @param medianGwei Median of submitted fees.
+    event FeePushed(uint256 feeGwei, uint256 medianGwei);
 
     /*//////////////////////////////////////////////////////////////////////////
                                      STORAGE
@@ -107,40 +108,44 @@ contract BlobFeeOracle is IBlobBaseFee, EIP712 {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Push a new fee observation using EIP-712 quorum signatures.
-    function push(FeedMsg calldata m, bytes[] calldata sigs) external {
+    function push(FeedMsg[] calldata msgs, bytes[] calldata sigs) external {
         require(!paused, "paused");
-        require(block.timestamp <= m.deadline, "expired");
-        require(m.fee < 10_000, "fee-out-of-range");
-        if (lastFee != 0) {
-            require(
-                m.fee >= lastFee / 2 && m.fee <= lastFee * 2,
-                "fee-unstable"
-            );
-        }
-        require(sigs.length >= minSigners, "quorum");
+        require(msgs.length == sigs.length, "len");
+        require(msgs.length >= minSigners && msgs.length >= 3, "quorum");
 
         uint256 slot = block.timestamp / 12;
         require(!slotPushed[slot], "already-pushed");
         slotPushed[slot] = true;
 
-        bytes32 digest = _hashTypedDataV4(
-            keccak256(abi.encode(FEED_TYPEHASH, m.fee, m.deadline))
-        );
-
+        uint256[] memory fees = new uint256[](msgs.length);
         uint256 seen;
-        for (uint256 i = 0; i < sigs.length; i++) {
+        for (uint256 i = 0; i < msgs.length; i++) {
+            FeedMsg calldata m = msgs[i];
+            require(block.timestamp <= m.deadline, "expired");
+            require(m.fee < 10_000, "fee-out-of-range");
+            if (lastFee != 0) {
+                require(
+                    m.fee >= (lastFee * 80) / 100 && m.fee <= (lastFee * 120) / 100,
+                    "fee-unstable"
+                );
+            }
+            bytes32 digest = _hashTypedDataV4(
+                keccak256(abi.encode(FEED_TYPEHASH, m.fee, m.deadline))
+            );
             address s = ECDSA.recover(digest, sigs[i]);
             require(isSigner[s], "!signer");
             uint256 idx = signerIndex[s];
             uint256 flag = 1 << idx;
             require(seen & flag == 0, "dup");
             seen |= flag;
+            fees[i] = m.fee;
         }
         require(_popcount(seen) >= minSigners, "quorum");
 
-        lastFee = m.fee;
+        uint256 med = _median(fees);
+        lastFee = med;
         lastTs = block.timestamp;
-        emit Pushed(m.fee);
+        emit FeePushed(med, med);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -155,6 +160,23 @@ contract BlobFeeOracle is IBlobBaseFee, EIP712 {
     /// @notice Number of authorised signers.
     function signerCount() external view returns (uint256) {
         return signers.length;
+    }
+
+    function _median(uint256[] memory arr) private pure returns (uint256 m) {
+        uint256 n = arr.length;
+        for (uint256 i = 1; i < n; i++) {
+            uint256 j = i;
+            uint256 x = arr[i];
+            while (j > 0 && arr[j - 1] > x) {
+                arr[j] = arr[j - 1];
+                j--;
+            }
+            arr[j] = x;
+        }
+        if (n % 2 == 1) return arr[n / 2];
+        uint256 a = arr[n / 2 - 1];
+        uint256 b = arr[n / 2];
+        return (a + b) / 2;
     }
 
     /// @dev Count set bits using Brian Kernighan's algorithm.
@@ -207,7 +229,7 @@ contract BlobFeeOracle is IBlobBaseFee, EIP712 {
         require(feeGwei < 10_000, "fee-out-of-range");
         lastFee = feeGwei;
         lastTs = block.timestamp;
-        emit Pushed(feeGwei);
+        emit FeePushed(feeGwei, feeGwei);
     }
 
     function pause(bool p) external { require(msg.sender==timelock, "!tl"); paused=p; }

@@ -16,7 +16,7 @@ const signers = oracleKeys.map((k) => new ethers.Wallet(k, provider));
 
 const oracle = new ethers.Contract(
   process.env.ORACLE!,
-  ["function push((uint256 fee,uint256 deadline),bytes[] sigs) external"],
+  ["function push((uint256 fee,uint256 deadline)[],bytes[] sigs) external"],
   signers[0],
 );
 
@@ -49,7 +49,8 @@ async function publish() {
     const message = { fee, deadline: Math.floor(Date.now() / 1000) + 30 };
     const digest = ethers.TypedDataEncoder.hash(domain, types, message);
     const sigs = signers.map((s) => s.signingKey.sign(digest).serialized);
-    const tx = await oracle.push(message, sigs);
+    const msgs = signers.map(() => message);
+    const tx = await oracle.push(msgs, sigs);
     feeGauge.set(fee);
     console.log(`pushed ${fee} gwei -> ${tx.hash}`);
   } catch (err) {

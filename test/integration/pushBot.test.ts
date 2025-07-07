@@ -50,7 +50,8 @@ async function main() {
   const message = { fee, deadline: BigInt(Math.floor(Date.now() / 1000) + 30) };
   const digest = ethers.TypedDataEncoder.hash(domain, types, message);
   const sigs = wallets.map((w) => w.signingKey.sign(digest).serialized);
-  await oracle.push(message, sigs);
+  const msgs = wallets.map(() => message);
+  await oracle.push(msgs, sigs);
   const last = await oracle.lastFee();
   assert.equal(last.toString(), fee.toString());
 
