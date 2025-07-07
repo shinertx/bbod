@@ -118,8 +118,8 @@ contract BlobOptionDesk is ReentrancyGuard {
             emit PayCapped(id, rawPay, maxPayPerOpt);
         }
 
-        // bounty to caller (post state update to avoid revert grief)
-        uint256 bounty = address(this).balance * SETTLE_BOUNTY_BP / 10_000;
+        // bounty to caller based only on this series' margin
+        uint256 bounty = s.margin * SETTLE_BOUNTY_BP / 10_000;
 
         seriesSettled[id] = true;
 
