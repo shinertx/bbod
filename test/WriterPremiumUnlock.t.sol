@@ -37,4 +37,16 @@ contract WriterPremiumUnlock is Test {
         desk.withdrawPremium(id);
         assertGt(address(this).balance, balBefore, "premium not released");
     }
-} 
+
+    function testWithdrawTooEarly() public {
+        uint256 id = 1;
+        desk.create{value: 1 ether}(id, 50, 75, block.timestamp + 3600, 1);
+        uint256 p = desk.premium(50, block.timestamp + 3600);
+        vm.deal(address(1), p);
+        vm.prank(address(1));
+        desk.buy{value: p}(id, 1);
+        vm.expectRevert("locked");
+        desk.withdrawPremium(id);
+    }
+}
+

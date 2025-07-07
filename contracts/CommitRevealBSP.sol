@@ -30,6 +30,7 @@ contract CommitRevealBSP is ReentrancyGuard {
         uint256 hiPool;
         uint256 loPool;
         uint256 rake;
+        uint256 bounty;
         uint256 thresholdGwei;
         uint256 feeResult; // oracle fee for the round (gwei)
         uint256 settlePriceGwei;
@@ -42,7 +43,7 @@ contract CommitRevealBSP is ReentrancyGuard {
 
     event Commit(uint256 indexed round, address indexed user, uint256 amount);
     event Reveal(uint256 indexed round, address indexed user, Side side, uint256 amount);
-    event Settled(uint256 indexed round, uint256 feeGwei, uint256 rakeWei);
+    event Settled(uint256 indexed round, uint256 feeGwei, uint256 rakeWei, uint256 bountyWei);
     event Payout(uint256 indexed round, address indexed user, uint256 amount);
     event Refund(uint256 indexed round, address indexed user, uint256 amount);
     event NewRound(uint256 indexed round, uint256 closeTs, uint256 revealTs, uint256 thresholdGwei);
@@ -56,6 +57,7 @@ contract CommitRevealBSP is ReentrancyGuard {
     IBlobBaseFee public immutable F;
 
     uint16 public constant RAKE_BP = 500; // 5%
+    uint16 public constant SETTLE_BOUNTY_BP = 10; // 0.10 %
     uint256 public constant MIN_BET = 0.01 ether;
     uint256 public constant GRACE_NONREVEAL = 15 minutes;
 
@@ -64,6 +66,7 @@ contract CommitRevealBSP is ReentrancyGuard {
 
     bytes32  public thresholdCommit;
     uint256  public commitRound; // round the commit applies to
+    uint256  public nextThreshold;
 
     /*//////////////////////////////////////////////////////////////////////////
                                    CONSTRUCTOR
@@ -126,6 +129,9 @@ contract CommitRevealBSP is ReentrancyGuard {
         Round storage R = rounds[cur];
         require(block.timestamp >= R.revealTs, "too early");
         require(!R.settled, "done");
+        if (commitRound == cur) {
+            revert("threshold-not-revealed");
+        }
 
         uint256 feeGwei = F.blobBaseFee();
         R.feeResult = feeGwei;
@@ -137,18 +143,26 @@ contract CommitRevealBSP is ReentrancyGuard {
         // Winner-less rescue: if everyone is on one side we skip rake and allow refunds.
         if (R.hiPool == 0 || R.loPool == 0) {
             R.rake = 0;
-            emit Settled(cur, feeGwei, 0);
-            _open(0);
+            R.bounty = 0;
+            emit Settled(cur, feeGwei, 0, 0);
+            uint256 thr = nextThreshold != 0 ? nextThreshold : 0;
+            nextThreshold = 0;
+            _open(thr);
             return; // early exit – claim() will refund bettors
         }
 
+        uint256 bounty = gross * SETTLE_BOUNTY_BP / 10_000;
         uint256 rakeAmount = gross * RAKE_BP / 10_000;
         R.rake = rakeAmount;
+        R.bounty = bounty;
+        if (bounty > 0) payable(msg.sender).transfer(bounty);
         payable(owner).transfer(rakeAmount);
 
-        emit Settled(cur, feeGwei, rakeAmount);
+        emit Settled(cur, feeGwei, rakeAmount, bounty);
 
-        _open(0); // open next round; threshold revealed later
+        uint256 thr = nextThreshold != 0 ? nextThreshold : 0;
+        nextThreshold = 0;
+        _open(thr); // open next round with enforced threshold
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -195,7 +209,7 @@ contract CommitRevealBSP is ReentrancyGuard {
         require(win, "lose");
 
         uint256 poolWin = hiWin ? R.hiPool : R.loPool;
-        uint256 total = R.hiPool + R.loPool - R.rake;
+        uint256 total = R.hiPool + R.loPool - R.rake - R.bounty;
 
         uint256 share = tickets[id][who].amount;
         require(share > 0, "none");
@@ -213,16 +227,17 @@ contract CommitRevealBSP is ReentrancyGuard {
 
     /// @notice Commit hash(threshold, nonce) for the next round.
     function commit(bytes32 h) external onlyOwner {
-        require(commitRound <= cur, "pending");
+        require(commitRound == 0, "pending");
         commitRound = cur + 1;
         thresholdCommit = h;
+        nextThreshold = 0;
     }
 
     /// @notice Reveal threshold for the committed round.
     function reveal(uint256 thr, uint256 nonce) external onlyOwner {
         require(commitRound == cur, "round");
         require(keccak256(abi.encodePacked(thr, nonce)) == thresholdCommit, "bad");
-        rounds[cur].thresholdGwei = thr;
+        nextThreshold = thr;
         thresholdCommit = 0;
         commitRound = 0;
     }
@@ -249,6 +264,7 @@ contract CommitRevealBSP is ReentrancyGuard {
             hiPool: 0,
             loPool: 0,
             rake: 0,
+            bounty: 0,
             thresholdGwei: thr,
             feeResult: 0,
             settlePriceGwei: 0,

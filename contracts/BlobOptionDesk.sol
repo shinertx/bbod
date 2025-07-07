@@ -49,6 +49,7 @@ contract BlobOptionDesk is ReentrancyGuard {
     ) external payable {
         require(msg.sender == writer, "!w");
         require(series[id].strike == 0, "exists");
+        require(expiry > block.timestamp, "bad-expiry");
         require(capGwei > strikeGwei, "cap<=strike");
         require(capGwei - strikeGwei <= 100, "cap too high");
         uint256 maxPay = (capGwei - strikeGwei) * 1 gwei * maxSold;
@@ -88,7 +89,7 @@ contract BlobOptionDesk is ReentrancyGuard {
         require(block.timestamp + 300 < s.expiry, "too-late-to-buy");
         (uint256 tv, uint256 iv) = optionCost(s.strike, s.expiry);
         uint256 cost = (tv + iv) * qty;
-        require(msg.value >= cost, "!prem");
+        require(msg.value == cost, "!prem");
         require(s.sold + qty <= seriesMaxSold[id], "sold>limit");
         s.sold += qty;
         bal[msg.sender][id] += qty;
@@ -180,8 +181,8 @@ contract BlobOptionDesk is ReentrancyGuard {
 
     /// @notice Withdraw unlocked premiums for a single series.
     function withdrawPremium(uint256 id) external {
-        require(msg.sender == writer, "!w");
-        require(block.timestamp >= unlockTs[id], "escrow");
+        require(msg.sender == writer, "!auth");
+        require(unlockTs[id] != 0 && block.timestamp >= unlockTs[id], "locked");
         uint256 amt = premCollected[id];
         premCollected[id] = 0;
         payable(writer).transfer(amt);
