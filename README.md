@@ -2,9 +2,9 @@
 
 Blob Edge Stack is a decentralized derivatives suite built around Ethereum's EIP-4844 blob base fee. It contains two main on-chain systems and a collection of off-chain bots and daemons:
 
-* **BBOD** – `BlobOptionDesk`: fully collateralized options on future blob fees.
-* **BSP** – `CommitRevealBSP`: hourly betting market with commit-reveal settlement.
-* **BlobFeeOracle** – lightweight push oracle for blob fee observations.
+- **BBOD** – `BlobOptionDesk`: fully collateralized options on future blob fees.
+- **BSP** – `CommitRevealBSP`: hourly betting market with commit-reveal settlement.
+- **BlobFeeOracle** – lightweight push oracle for blob fee observations.
 
 The repository also ships monitoring and automation tools for production deployment.
 
@@ -28,13 +28,13 @@ The repository also ships monitoring and automation tools for production deploym
 
 ## Contracts Overview
 
-| Contract | Purpose |
-|---------|---------|
-| `BlobFeeOracle` | 3-of-N push oracle that records the fee signed by a quorum of feeders. |
-| `BlobOptionDesk` | Fully collateralized call options on future blob fees. |
-| `CommitRevealBSP` | Hourly parimutuel market using commit-reveal mechanics. |
-| `BaseBlobVault` | Shared event helpers for settlement. |
-| `IBlobBaseFee` | Interface used by both BBOD and BSP to query the fee. |
+| Contract          | Purpose                                                                |
+| ----------------- | ---------------------------------------------------------------------- |
+| `BlobFeeOracle`   | 3-of-N push oracle that records the fee signed by a quorum of feeders. |
+| `BlobOptionDesk`  | Fully collateralized call options on future blob fees.                 |
+| `CommitRevealBSP` | Hourly parimutuel market using commit-reveal mechanics.                |
+| `BaseBlobVault`   | Shared event helpers for settlement.                                   |
+| `IBlobBaseFee`    | Interface used by both BBOD and BSP to query the fee.                  |
 
 ### Key Parameters
 
@@ -42,24 +42,23 @@ The repository also ships monitoring and automation tools for production deploym
 - **CommitRevealBSP** – `REVEAL_TIMEOUT` of 15 minutes prevents threshold-freeze. `THRESHOLD_REVEAL_TIMEOUT` of 1 hour falls back to the previous threshold if unrevealed.
 - **BlobOptionDesk** – premium scale `k` defaults to `7e13`; margin withdrawal is possible after `GRACE_PERIOD` (1 day).
 
-
 ## Environment Variables
 
 Create a `.env` file (see `.env.example`) and populate the following variables:
 
-| Name | Purpose |
-|------|---------|
-| `RPC` | RPC URL used by bots and tests |
-| `PRIV` | Private key for deployments and bot accounts |
-| `ORACLE_KEYS` | Comma separated private keys used by `oracleBot.ts` for EIP-712 signatures |
-| `ORACLE` | Address of the deployed `BlobFeeOracle` |
-| `BLOB_ORACLE` | Same as `ORACLE` for forge scripts |
-| `BSP` | Address of the deployed `CommitRevealBSP` |
-| `BBOD` | Address of the deployed `BlobOptionDesk` |
-| `REDIS` | Redis connection string (for daemon and WebSocket bridge) |
-| `BEACON` | Fallback beacon API endpoint for blob fees |
-| `WS_PORT` | Port for the local WebSocket bridge |
-| `METRICS_PORT` | Port to expose Prometheus metrics |
+| Name           | Purpose                                                                                  |
+| -------------- | ---------------------------------------------------------------------------------------- |
+| `RPC`          | RPC URL used by bots and tests                                                           |
+| `PRIV`         | Private key for deployments and bot accounts                                             |
+| `ORACLE_KEYS`  | Comma separated private keys used by `oracleBot.ts` and feed bots for EIP-712 signatures |
+| `ORACLE`       | Address of the deployed `BlobFeeOracle`                                                  |
+| `BLOB_ORACLE`  | Same as `ORACLE` for forge scripts                                                       |
+| `BSP`          | Address of the deployed `CommitRevealBSP`                                                |
+| `BBOD`         | Address of the deployed `BlobOptionDesk`                                                 |
+| `REDIS`        | Redis connection string (for daemon and WebSocket bridge)                                |
+| `BEACON`       | Fallback beacon API endpoint for blob fees                                               |
+| `WS_PORT`      | Port for the local WebSocket bridge                                                      |
+| `METRICS_PORT` | Port to expose Prometheus metrics                                                        |
 
 Example:
 
@@ -113,7 +112,7 @@ METRICS_PORT=9464
    pnpm ts-node bots/settleBot.ts
    pnpm ts-node bots/seedBot.ts
    ```
-The oracleBot signs each message with the keys in `ORACLE_KEYS` using EIP-712.
+   The oracleBot and feed bots sign each message with the keys in `ORACLE_KEYS` using EIP-712.
 
 ---
 
