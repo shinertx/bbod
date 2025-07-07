@@ -42,3 +42,38 @@ services:
     env_file: ../.env
     ports: ["${WS_PORT:-6380}:${WS_PORT:-6380}"]
     restart: always
+
+  settlement:
+    build: ../
+    command: pnpm ts-node bots/settleBot.ts
+    env_file: ../.env
+    restart: always
+
+  monitoring:
+    build: ../
+    command: pnpm ts-node daemon/monitoringAgent.ts
+    env_file: ../.env
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - "./prometheus:/etc/prometheus/"
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./grafana-provisioning:/etc/grafana/provisioning

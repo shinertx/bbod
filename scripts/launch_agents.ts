@@ -31,6 +31,15 @@ for (const a of spec.agents) {
     case "WSBridge_Agent":
       run(["pnpm", "ts-node", "daemon/wsBridge.ts"], a.name);
       break;
+    case "Settlement_Agent":
+      run(["pnpm", "ts-node", "bots/settleBot.ts"], a.name);
+      break;
+    case "Monitoring_Agent":
+      run(["pnpm", "ts-node", "daemon/monitoringAgent.ts"], a.name);
+      break;
+    case "Manager_Agent":
+      run(["pnpm", "ts-node", "daemon/managerAgent.ts"], a.name);
+      break;
     default:
       console.error("unknown agent", a.name);
   }
