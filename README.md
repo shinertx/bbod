@@ -114,6 +114,16 @@ METRICS_PORT=9464
    ```
    The oracleBot and feed bots sign each message with the keys in `ORACLE_KEYS` using EIP-712.
 
+6. **Launch the frontend**
+   For local development run:
+   ```bash
+   pnpm --prefix frontend dev
+   ```
+   For a production build (if the `start` script is available):
+   ```bash
+   pnpm --prefix frontend build && pnpm --prefix frontend start
+   ```
+
 ---
 
 ## Production Notes
