@@ -1,0 +1,27 @@
+groups:
+- name: bbod_rules
+  rules:
+  - alert: AgentDown
+    expr: up{job="agents"} == 0
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "{{ $labels.instance }} is down"
+      description: "No scrape data for more than 2 minutes."
+  - alert: ServiceUptimeLow
+    expr: (1 - avg_over_time(up{job="agents"}[1h])) > 0.001
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Uptime below 99.9%"
+      description: "Average uptime over last hour fell under target."
+  - alert: ProtocolDrawdown
+    expr: bbod_pnl_percent < -5
+    for: 10m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Protocol drawdown exceeds 5%"
+      description: "Current drawdown is {{ $value }}%." 

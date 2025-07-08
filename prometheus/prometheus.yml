@@ -2,9 +2,21 @@ global:
   scrape_interval: 15s
 
 scrape_configs:
-  - job_name: "node_bots"
+  - job_name: "agents"
     static_configs:
-      - targets: ["exporter:9464"]
+      - targets:
+          - "oracle1:9464"
+          - "blobd:9464"
+          - "commit-reveal:9464"
+          - "threshold:9464"
+          - "seed:9464"
+          - "iv:9464"
+          - "settlement:9464"
+          - "monitoring:9464"
+          - "wsbridge:9464"
+  - job_name: "redis"
+    static_configs:
+      - targets: ["redis:9121"]
 
 alerting:
   alertmanagers:
