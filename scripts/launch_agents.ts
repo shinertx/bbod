@@ -37,6 +37,9 @@ for (const a of spec.agents) {
     case "Monitoring_Agent":
       run(["pnpm", "ts-node", "daemon/monitoringAgent.ts"], a.name);
       break;
+    case "Deploy_Agent":
+      run(["pnpm", "ts-node", "daemon/deployAgent.ts"], a.name);
+      break;
     case "Manager_Agent":
       run(["pnpm", "ts-node", "daemon/managerAgent.ts"], a.name);
       break;

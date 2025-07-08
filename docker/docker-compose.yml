@@ -82,3 +82,9 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
       - ./grafana-provisioning:/etc/grafana/provisioning
+
+  deploy:
+    build: ../
+    command: pnpm ts-node daemon/deployAgent.ts
+    env_file: ../.env
+    restart: always

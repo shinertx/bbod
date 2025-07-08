@@ -14,6 +14,7 @@ scrape_configs:
           - "settlement:9464"
           - "monitoring:9464"
           - "wsbridge:9464"
+          - "deploy:9464"
   - job_name: "redis"
     static_configs:
       - targets: ["redis:9121"]

@@ -12,3 +12,21 @@ jobs:
       - run: pnpm format --check
       - uses: foundry-rs/foundry-toolchain@v1
       - run: forge test -vv
+
+  smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:24.0.5-dind
+        options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with: { version: 8 }
+      - run: pnpm install
+      - run: docker compose -f docker/docker-compose.yml up -d --build
+      - run: |
+          echo "Waiting for services..."; sleep 60;
+          curl -f http://localhost:9090/-/healthy
+      - run: docker compose -f docker/docker-compose.yml down -v
