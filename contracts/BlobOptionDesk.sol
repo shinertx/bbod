@@ -6,7 +6,7 @@ import "forge-std/console.sol";
 
 contract BlobOptionDesk is ReentrancyGuard {
     uint256 constant MIN_EXPIRY = 1 hours;
-    uint256 constant BUY_CUTOFF = 5 minutes;
+    uint256 public constant BUY_CUTOFF = 5 minutes;
 
     struct Series {
         address writer;
@@ -104,6 +104,7 @@ contract BlobOptionDesk is ReentrancyGuard {
         Series storage s = series[id];
         if (s.writer == address(0)) revert("bad-series");
         if (block.timestamp < s.expiry) revert("too-soon");
+        if (block.timestamp > s.expiry + GRACE_PERIOD()) revert("too-late-to-exercise");
         if (bal[msg.sender][id] < num) revert("insufficient-balance");
 
         bal[msg.sender][id] -= num;
@@ -140,6 +141,7 @@ contract BlobOptionDesk is ReentrancyGuard {
         Series storage s = series[id];
         if (s.writer != msg.sender) revert("not-writer");
         if (!seriesSettled[id]) revert("not-settled");
+        if (block.timestamp < s.expiry + GRACE_PERIOD()) revert("grace");
         if (s.margin == 0) revert("no-margin");
 
         uint256 margin = s.margin;

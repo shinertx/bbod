@@ -37,8 +37,9 @@ contract OptionDeskEdge is Test {
     receive() external payable {}
 
     function testBuyCutoff() public {
-        uint256 expiry = block.timestamp + 1000;
+        uint256 expiry = block.timestamp + 2 hours;
         desk.create{value: 1 ether}(1, 50, 60, expiry, 1);
+        _push(50);
         uint256 p = desk.premium(50, expiry);
         vm.warp(expiry - desk.BUY_CUTOFF() + 1);
         vm.deal(buyer, p);
@@ -104,6 +105,7 @@ contract OptionDeskEdge is Test {
     function testSweepMarginTooEarly() public {
         uint256 expiry = block.timestamp + 1 hours;
         desk.create{value: 1 ether}(4, 50, 70, expiry, 1);
+        _push(50);
         uint256 prem = desk.premium(50, expiry);
         vm.deal(buyer, prem);
         vm.prank(buyer);

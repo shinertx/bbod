@@ -24,26 +24,27 @@ contract BBODFuzz is Test {
         signers.push(signer);
         oracle = new BlobFeeOracle(signers, 1);
         desk = new BlobOptionDesk(address(oracle));
+        vm.deal(address(this), 100 ether);
     }
 
     function testFuzz_Exercise(uint96 fee, uint96 strike) public {
         // constrain inputs
         fee = uint96(bound(fee, 0, 200));
-        strike = uint96(bound(strike, 0, 199));
+        strike = uint96(bound(strike, 1, 199)); // strike cannot be 0
 
         // create series
         uint256 cap = strike + 50;
-        vm.prank(address(this));
-        desk.create{value: 10 ether}(1, strike, cap, block.timestamp + 1 hours, 100);
+        uint256 expiry = block.timestamp + 1 hours;
+        desk.create{value: 10 ether}(1, strike, cap, expiry, 100);
 
         // buy option
-        uint256 prem = desk.premium(strike, block.timestamp + 1 hours);
+        uint256 prem = desk.premium(strike, expiry);
         vm.deal(buyer, prem);
         vm.prank(buyer);
         desk.buy{value: prem}(1, 1);
 
         // time passes + oracle push
-        vm.warp(block.timestamp + 1 hours + 1);
+        vm.warp(expiry + 1);
         // sign and push fee
         uint256 dl = block.timestamp + 30;
         bytes32 domain = keccak256(abi.encode(
@@ -60,12 +61,14 @@ contract BBODFuzz is Test {
         sigs[0] = abi.encodePacked(r, s, v);
         oracle.push(BlobFeeOracle.FeedMsg({fee: fee, deadline: dl}), sigs);
 
-        // settle
-        desk.settle(1);
-
+        // exercise
         if (fee > strike) {
             vm.prank(buyer);
             desk.exercise(1, 1);
         }
+
+        // settle
+        vm.warp(expiry + 1 hours + 1);
+        desk.settle(1);
     }
 }

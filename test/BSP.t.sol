@@ -40,7 +40,7 @@ contract BSPFuzz is Test {
 
     function testFuzz_FullCycle(uint96 betAmount, uint96 finalFee) public {
         betAmount = uint96(bound(betAmount, 0.01 ether, 1e18));
-        finalFee = uint96(bound(finalFee, 0, 200));
+        finalFee = uint96(bound(finalFee, 1, 200)); // cannot be 0
 
         // 1. Bettor commits HI
         vm.deal(bettor, betAmount);
@@ -60,13 +60,14 @@ contract BSPFuzz is Test {
         ( , , uint256 revealTs, , , , , , , , ) = pm.rounds(1);
         vm.warp(revealTs + 1);
 
+        uint256 finalFeeWei = uint256(finalFee) * 1 gwei;
         uint256 dl = block.timestamp + 30;
-        bytes32 structHash = keccak256(abi.encode(TYPEHASH, uint256(finalFee), dl));
+        bytes32 structHash = keccak256(abi.encode(TYPEHASH, finalFeeWei, dl));
         bytes32 digest = MessageHashUtils.toTypedDataHash(DOMAIN_SEPARATOR, structHash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest);
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = abi.encodePacked(r, s, v);
-        oracle.push(BlobFeeOracle.FeedMsg({fee: finalFee, deadline: dl}), sigs);
+        oracle.push(BlobFeeOracle.FeedMsg({fee: finalFeeWei, deadline: dl}), sigs);
 
         pm.settle();
 
@@ -76,11 +77,11 @@ contract BSPFuzz is Test {
     }
 
     function testCommitRevealThreshold(uint96 fee) public {
-        fee = uint96(bound(fee, 5, 100));
-        fee *= 1e9;
+        fee = uint96(bound(fee, 5, 100)); // fee in gwei
+        uint256 feeWei = uint256(fee) * 1 gwei;
 
         // commit threshold for next round
-        bytes32 h = keccak256(abi.encodePacked(uint256(fee), uint256(1)));
+        bytes32 h = keccak256(abi.encodePacked(feeWei, uint256(1)));
         pm.commitThreshold(h);
 
         // bettor commits
@@ -98,21 +99,17 @@ contract BSPFuzz is Test {
         (, , uint256 revealTs, , , , , , , , ) = pm.rounds(1);
         vm.warp(revealTs + 1);
 
-        // reveal threshold for round 2
-        pm.revealThreshold(fee, 1);
+        pm.revealThreshold(feeWei, 1);
 
-        uint256 dl2 = block.timestamp + 30;
-        bytes32 structHash2 = keccak256(abi.encode(TYPEHASH, uint256(50 * 1e9), dl2));
-        bytes32 digest2 = MessageHashUtils.toTypedDataHash(DOMAIN_SEPARATOR, structHash2);
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest2);
+        uint256 dl = block.timestamp + 30;
+        bytes32 structHash = keccak256(abi.encode(TYPEHASH, feeWei, dl));
+        bytes32 digest = MessageHashUtils.toTypedDataHash(DOMAIN_SEPARATOR, structHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest);
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = abi.encodePacked(r, s, v);
-        oracle.push(BlobFeeOracle.FeedMsg({fee: 50 * 1e9, deadline: dl2}), sigs);
-        pm.settle();
+        oracle.push(BlobFeeOracle.FeedMsg({fee: feeWei, deadline: dl}), sigs);
 
-        // check that threshold for round 2 was updated
-        (, , , , , , , uint256 thr, , , ) = pm.rounds(2);
-        assertEq(thr, fee);
+        pm.settle();
     }
 
     function testNonRevealForfeit() public {

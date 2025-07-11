@@ -160,6 +160,8 @@ contract CommitRevealBSP is ReentrancyGuard {
         }
 
         uint256 feeGwei = F.blobBaseFee();
+        if (feeGwei == 0) revert("fee-not-set");
+        if (feeGwei > 200 * 1 gwei) revert("fee-out-of-range");
         R.feeResult = feeGwei;
         R.settlePriceGwei = feeGwei;
         R.settled = true;

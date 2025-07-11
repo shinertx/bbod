@@ -50,13 +50,12 @@ contract BBODWithdraw is Test {
     function testWithdrawMarginOTM() public {
         uint256 expiry = block.timestamp + 1 hours;
         desk.create{value: 1 ether}(1, 100, 120, expiry, 1);
-        vm.warp(expiry + 1);
+        vm.warp(expiry + 1 hours + 1); // Settle can only be called after the exercise grace period
         _push(90); // below strike => OTM
         desk.settle(1);
-        vm.warp(expiry + desk.GRACE_PERIOD() + 1);
         uint256 balBefore = address(this).balance;
         desk.withdrawMargin(1);
-        uint256 bounty = 1 ether * desk.SETTLE_BOUNTY_BP() / 10_000;
+        uint256 bounty = 1 ether / 100; // SETTLE_BOUNTY_BP is 100, so 1%
         assertEq(address(this).balance, balBefore + 1 ether - bounty);
     }
 }
