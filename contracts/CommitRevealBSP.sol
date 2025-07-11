@@ -72,6 +72,9 @@ contract CommitRevealBSP is ReentrancyGuard {
     uint256  public constant THRESHOLD_REVEAL_TIMEOUT = 1 hours;
     uint256  public nextThreshold;
 
+    uint256 public constant ROUND_DURATION = 1 hours;
+    uint256 public constant REVEAL_WINDOW = 15 minutes;
+
     /*//////////////////////////////////////////////////////////////////////////
                                     PAUSING
     //////////////////////////////////////////////////////////////////////////*/
@@ -86,7 +89,7 @@ contract CommitRevealBSP is ReentrancyGuard {
     constructor(address oracle) {
         owner = msg.sender;
         F = IBlobBaseFee(oracle);
-        _open(25); // bootstrap with default 25 gwei threshold
+        _open(100 gwei); // bootstrap with default 100 gwei threshold
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -144,15 +147,16 @@ contract CommitRevealBSP is ReentrancyGuard {
         require(!R.settled, "done");
         uint256 nextThr;
         if (commitRound == cur) {
-            if (block.timestamp < R.revealTs + THRESHOLD_REVEAL_TIMEOUT) {
-                revert("threshold-not-revealed");
+            if (block.timestamp < commitTs + THRESHOLD_REVEAL_TIMEOUT) {
+                if (nextThreshold == 0) revert("!reveal");
+                nextThr = nextThreshold;
             } else {
-                commitRound = 0;
-                thresholdCommit = 0;
+                // timed out, use current threshold for next round
                 nextThr = R.thresholdGwei;
             }
         } else {
-            nextThr = nextThreshold != 0 ? nextThreshold : 0;
+            // no commit for this round, carry over threshold
+            nextThr = R.thresholdGwei;
         }
 
         uint256 feeGwei = F.blobBaseFee();
@@ -169,6 +173,8 @@ contract CommitRevealBSP is ReentrancyGuard {
             emit Settled(cur, feeGwei, 0, 0);
             uint256 thr = nextThr;
             nextThreshold = 0;
+            commitRound = 0;
+            thresholdCommit = 0;
             _open(thr);
             return; // early exit – claim() will refund bettors
         }
@@ -182,9 +188,10 @@ contract CommitRevealBSP is ReentrancyGuard {
 
         emit Settled(cur, feeGwei, rakeAmount, bounty);
 
-        uint256 thr = nextThr;
         nextThreshold = 0;
-        _open(thr); // open next round with enforced threshold
+        commitRound = 0;
+        thresholdCommit = 0;
+        _open(nextThr); // open next round with enforced threshold
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -246,75 +253,47 @@ contract CommitRevealBSP is ReentrancyGuard {
         emit Payout(id, who, pay);
     }
 
+    function _open(uint256 thresholdGwei) internal {
+        cur++;
+        uint256 openTs = block.timestamp;
+        uint256 closeTs = openTs + ROUND_DURATION;
+        uint256 revealTs = closeTs + REVEAL_WINDOW;
+        rounds[cur] = Round({
+            openTs: openTs,
+            closeTs: closeTs,
+            revealTs: revealTs,
+            hiPool: 0,
+            loPool: 0,
+            rake: 0,
+            bounty: 0,
+            thresholdGwei: thresholdGwei,
+            feeResult: 0,
+            settlePriceGwei: 0,
+            settled: false
+        });
+        emit NewRound(cur, closeTs, revealTs, thresholdGwei);
+    }
+
+    function _safeSend(address to, uint256 value) internal {
+        (bool success, ) = to.call{value: value}("");
+        require(success, "xfer");
+    }
+
     /*//////////////////////////////////////////////////////////////////////////
                                    ADMIN
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Commit hash(threshold, nonce) for the next round.
     function commitThreshold(bytes32 h) external onlyOwner {
-        require(thresholdCommit == 0, "active-commit");
+        require(commitRound < cur, "commit exists");
         commitRound = cur;
         commitTs = block.timestamp;
         thresholdCommit = h;
     }
 
-    /// @notice Reveal a threshold for the subsequent round.
-    function reveal(uint256 thr, uint256 nonce) external onlyOwner {
-        require(commitRound == cur, "round");
-        require(keccak256(abi.encodePacked(thr, nonce)) == thresholdCommit, "bad");
+    function revealThreshold(uint256 thr, uint256 salt) external onlyOwner {
+        require(commitRound == cur, "no commit");
+        require(thresholdCommit == keccak256(abi.encodePacked(thr, salt)), "bad reveal");
         nextThreshold = thr;
-        thresholdCommit = 0;
-        commitRound = 0;
-        commitTs = 0;
     }
-
-    /// @notice Sweep accumulated dust after settlement and long inactivity.
-    function sweepDust(uint256 roundId) external onlyOwner {
-        Round storage R = rounds[roundId];
-        require(R.settled && block.timestamp > R.revealTs + 30 days, "too-soon");
-        uint256 tracked = R.hiPool + R.loPool;
-        uint256 excess = address(this).balance > tracked ? address(this).balance - tracked : 0;
-        if (excess > 0) _safeSend(owner, excess);
-    }
-
-    function pause(bool p) external onlyOwner {
-        paused = p;
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                                 SAFE ETH TRANSFER
-    //////////////////////////////////////////////////////////////////////////*/
-
-    function _safeSend(address to, uint256 amount) internal {
-        (bool ok, ) = payable(to).call{value: amount}("");
-        require(ok, "xfer");
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                                   INTERNAL
-    //////////////////////////////////////////////////////////////////////////*/
-
-    function _open(uint256 thr) internal {
-        cur += 1;
-        rounds[cur] = Round({
-            openTs: block.timestamp,
-            closeTs: block.timestamp + 300,   // 5-minute commit phase
-            revealTs: block.timestamp + 600,  // 5-minute reveal phase
-            hiPool: 0,
-            loPool: 0,
-            rake: 0,
-            bounty: 0,
-            thresholdGwei: thr,
-            feeResult: 0,
-            settlePriceGwei: 0,
-            settled: false
-        });
-        emit NewRound(cur, block.timestamp + 300, block.timestamp + 600, thr);
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                                  RECEIVE ETHER
-    //////////////////////////////////////////////////////////////////////////*/
-
-    receive() external payable {}
 }

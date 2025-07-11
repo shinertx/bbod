@@ -26,39 +26,45 @@ contract ThresholdRevealEnforcement is Test {
     }
 
     function testSettleRevertsIfUnrevealed() public {
-        // commit threshold for next round (round 2)
-        bytes32 h = keccak256(abi.encodePacked(uint256(50), uint256(1)));
-        vm.prank(address(this));
-        pm.commitThreshold(h);
-
-        // settle round 1 (allowed even if next round unrevealed)
+        // Settle round 1 by waiting for timeout
         (, , uint256 revealTs1,,,,,,,,) = pm.rounds(1);
-        vm.warp(revealTs1 + 1);
+        vm.warp(revealTs1 + pm.THRESHOLD_REVEAL_TIMEOUT() + 1);
         pm.settle();
 
-        // attempt to settle round 2 without revealing threshold
+        // commit threshold for next round (round 2)
+        bytes32 h = keccak256(abi.encodePacked(uint256(50), uint256(1)));
+        pm.commitThreshold(h);
+
+        // attempt to settle round 2 without revealing threshold, before timeout
         (, , uint256 revealTs2,,,,,,,,) = pm.rounds(2);
         vm.warp(revealTs2 + 1);
-        vm.expectRevert(bytes("threshold-not-revealed"));
+        vm.expectRevert(bytes("!reveal"));
         pm.settle();
     }
 
     function testSettleAfterTimeoutUsesPrevThreshold() public {
         bytes32 h = keccak256(abi.encodePacked(uint256(75), uint256(1)));
-        vm.prank(address(this));
         pm.commitThreshold(h);
 
+        // settle round 1 via timeout
         (, , uint256 revealTs1,,,,,,,,) = pm.rounds(1);
-        vm.warp(revealTs1 + 1);
+        vm.warp(revealTs1 + pm.THRESHOLD_REVEAL_TIMEOUT() + 1);
         pm.settle();
 
+        // get round 1 threshold for later comparison
+        (, , , , , , , uint256 thr1,,,) = pm.rounds(1);
+
+        // settle round 2 via timeout
         (, , uint256 revealTs2,,,,,,,,) = pm.rounds(2);
         vm.warp(revealTs2 + pm.THRESHOLD_REVEAL_TIMEOUT() + 1);
-
         pm.settle();
 
+        // After timeout, round 2 should have used round 1's threshold.
+        // Round 3 should be created with round 2's threshold.
         (, , , , , , , uint256 thr2,,,) = pm.rounds(2);
         (, , , , , , , uint256 thr3,,,) = pm.rounds(3);
-        assertEq(thr2, thr3, "fallback threshold");
+        assertEq(thr1, 100 * 1 gwei, "initial threshold not carried to r1");
+        assertEq(thr2, thr1, "fallback threshold not used for round 2");
+        assertEq(thr3, thr2, "round 3 threshold incorrect");
     }
 }

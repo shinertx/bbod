@@ -39,8 +39,8 @@ contract OptionDeskEdge is Test {
     function testBuyCutoff() public {
         uint256 expiry = block.timestamp + 1000;
         desk.create{value: 1 ether}(1, 50, 60, expiry, 1);
-        vm.warp(expiry - 1);
         uint256 p = desk.premium(50, expiry);
+        vm.warp(expiry - desk.BUY_CUTOFF() + 1);
         vm.deal(buyer, p);
         vm.prank(buyer);
         vm.expectRevert(bytes("too-late-to-buy"));
@@ -62,7 +62,7 @@ contract OptionDeskEdge is Test {
     function testWithdrawMarginOTM() public {
         uint256 expiry = block.timestamp + 1 hours;
         desk.create{value: 1 ether}(3, 100, 120, expiry, 1);
-        vm.warp(expiry + 1);
+        vm.warp(expiry + 1 hours);
         _push(50);
         desk.settle(3);
         vm.warp(expiry + desk.GRACE_PERIOD() + 1);
@@ -75,9 +75,10 @@ contract OptionDeskEdge is Test {
     function testWithdrawMarginTooEarly() public {
         uint256 expiry = block.timestamp + 1 hours;
         desk.create{value: 1 ether}(7, 100, 120, expiry, 1);
-        vm.warp(expiry + 1);
+        vm.warp(expiry + 1 hours);
         _push(50);
         desk.settle(7);
+        vm.warp(expiry + desk.GRACE_PERIOD() - 1 seconds);
         vm.expectRevert(bytes("grace"));
         desk.withdrawMargin(7);
     }
@@ -89,7 +90,7 @@ contract OptionDeskEdge is Test {
         vm.deal(buyer, prem);
         vm.prank(buyer);
         desk.buy{value: prem}(4, 1);
-        vm.warp(expiry + 1);
+        vm.warp(expiry + 1 hours);
         _push(60);
         desk.settle(4);
         vm.prank(buyer);
@@ -102,11 +103,18 @@ contract OptionDeskEdge is Test {
 
     function testSweepMarginTooEarly() public {
         uint256 expiry = block.timestamp + 1 hours;
-        desk.create{value: 1 ether}(8, 50, 70, expiry, 1);
-        vm.warp(expiry + 1);
-        _push(90);
-        desk.settle(8);
+        desk.create{value: 1 ether}(4, 50, 70, expiry, 1);
+        uint256 prem = desk.premium(50, expiry);
+        vm.deal(buyer, prem);
+        vm.prank(buyer);
+        desk.buy{value: prem}(4, 1);
+        vm.warp(expiry + 1 hours);
+        _push(60);
+        desk.settle(4);
+        vm.prank(buyer);
+        desk.exercise(4, 1);
+        vm.warp(expiry + desk.GRACE_PERIOD() - 1 seconds);
         vm.expectRevert(bytes("grace"));
-        desk.withdrawMargin(8);
+        desk.withdrawMargin(4);
     }
 }

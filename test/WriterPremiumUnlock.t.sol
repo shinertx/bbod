@@ -45,7 +45,7 @@ contract WriterPremiumUnlock is Test {
         vm.deal(address(1), p);
         vm.prank(address(1));
         desk.buy{value: p}(id, 1);
-        vm.expectRevert("locked");
+        vm.expectRevert(bytes("locked"));
         desk.withdrawPremium(id);
     }
 }

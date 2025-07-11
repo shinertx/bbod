@@ -50,7 +50,8 @@ contract BSPFuzz is Test {
         pm.commit{value: betAmount}(commit);
 
         // 2. Forward to reveal phase
-        vm.warp(block.timestamp + 301);
+        (, uint256 closeTs, , , , , , , , , ) = pm.rounds(1);
+        vm.warp(closeTs);
 
         vm.prank(bettor);
         pm.reveal(CommitRevealBSP.Side.Hi, salt);
@@ -75,7 +76,8 @@ contract BSPFuzz is Test {
     }
 
     function testCommitRevealThreshold(uint96 fee) public {
-        fee = uint96(bound(fee, 5, 200));
+        fee = uint96(bound(fee, 5, 100));
+        fee *= 1e9;
 
         // commit threshold for next round
         bytes32 h = keccak256(abi.encodePacked(uint256(fee), uint256(1)));
@@ -88,7 +90,8 @@ contract BSPFuzz is Test {
         vm.prank(bettor);
         pm.commit{value: 1 ether}(bet);
 
-        vm.warp(block.timestamp + 301);
+        (, uint256 closeTs, , , , , , , , , ) = pm.rounds(1);
+        vm.warp(closeTs);
         vm.prank(bettor);
         pm.reveal(CommitRevealBSP.Side.Hi, salt);
 
@@ -96,19 +99,18 @@ contract BSPFuzz is Test {
         vm.warp(revealTs + 1);
 
         // reveal threshold for round 2
-        pm.reveal(fee, 1);
+        pm.revealThreshold(fee, 1);
 
         uint256 dl2 = block.timestamp + 30;
-        bytes32 structHash2 = keccak256(abi.encode(TYPEHASH, uint256(50), dl2));
+        bytes32 structHash2 = keccak256(abi.encode(TYPEHASH, uint256(50 * 1e9), dl2));
         bytes32 digest2 = MessageHashUtils.toTypedDataHash(DOMAIN_SEPARATOR, structHash2);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest2);
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = abi.encodePacked(r, s, v);
-        oracle.push(BlobFeeOracle.FeedMsg({fee: 50, deadline: dl2}), sigs);
+        oracle.push(BlobFeeOracle.FeedMsg({fee: 50 * 1e9, deadline: dl2}), sigs);
         pm.settle();
 
-        // reveal threshold for round 2
-        
+        // check that threshold for round 2 was updated
         (, , , , , , , uint256 thr, , , ) = pm.rounds(2);
         assertEq(thr, fee);
     }
@@ -127,7 +129,8 @@ contract BSPFuzz is Test {
         vm.prank(lo);
         pm.commit{value: 1 ether}(commitL);
 
-        vm.warp(block.timestamp + 301);
+        (, uint256 closeTs, , , , , , , , , ) = pm.rounds(1);
+        vm.warp(closeTs);
         vm.prank(hi);
         pm.reveal(CommitRevealBSP.Side.Hi, saltH);
 
