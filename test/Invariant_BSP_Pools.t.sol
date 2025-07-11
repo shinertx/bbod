@@ -36,20 +36,22 @@ contract Invariant_BSP_Pools is Test {
         bsp.commit{value:1.2 ether}(keccak256(abi.encodePacked(bob, uint8(1), bytes32("salt2"))));
 
         // fast forward to reveal window
-        vm.warp(block.timestamp + 301);
+        (, uint256 closeTs, uint256 revealTs,,,,,,,,,,,) = bsp.rounds(bsp.cur());
+        vm.warp(closeTs);
         vm.prank(alice);
         bsp.reveal(CommitRevealBSP.Side.Hi, bytes32("salt1"));
         vm.prank(bob);
         bsp.reveal(CommitRevealBSP.Side.Lo, bytes32("salt2"));
 
         // settle phase
-        vm.warp(block.timestamp + 300);
+        vm.warp(revealTs);
         oracle.set(30); // some fee
         bsp.settle();
         uint256 prevRound = bsp.cur() - 1;
-        (,,,,,uint256 rake,uint256 bounty,,,,) = bsp.rounds(prevRound);
-        (,,,uint256 hiPool,uint256 loPool,,,,,,) = bsp.rounds(prevRound);
+        (,,,,uint256 hiPool, uint256 loPool, , , , , , , , uint256 bounty) = bsp.rounds(prevRound);
         assertEq(hiPool+loPool, 2.2 ether);
-        assertEq(rake + bounty <= 2.2 ether, true);
+        uint256 gross = hiPool + loPool;
+        uint256 expectedBounty = gross * bsp.SETTLE_BOUNTY_BP() / 10_000;
+        assertEq(bounty, expectedBounty);
     }
 }

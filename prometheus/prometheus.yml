@@ -1,11 +1,24 @@
 global:
   scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "alert.rules.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
 
 scrape_configs:
-  - job_name: "agents"
+  # BBOD Agents (Production)
+  - job_name: "bbod-agents"
     static_configs:
       - targets:
           - "oracle1:9464"
+          - "oracle2:9464" 
+          - "oracle3:9464"
           - "blobd:9464"
           - "commit-reveal:9464"
           - "threshold:9464"
@@ -15,9 +28,25 @@ scrape_configs:
           - "monitoring:9464"
           - "wsbridge:9464"
           - "deploy:9464"
+    scrape_interval: 30s
+    
+  # Infrastructure
   - job_name: "redis"
     static_configs:
       - targets: ["redis:9121"]
+    scrape_interval: 30s
+    
+  # Ethereum Nodes
+  - job_name: "ethereum-rpc"
+    static_configs:
+      - targets: ["eth-mainnet-1:8545", "eth-mainnet-2:8545"]
+    scrape_interval: 60s
+    
+  # System Health  
+  - job_name: "node-exporter"
+    static_configs:
+      - targets: ["localhost:9100"]
+    scrape_interval: 30s
 
 alerting:
   alertmanagers:

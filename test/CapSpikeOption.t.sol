@@ -25,6 +25,7 @@ contract CapSpikeOptionTest is Test {
         signers.push(signer);
         oracle = new BlobFeeOracle(signers, 1);
         desk = new BlobOptionDesk(address(oracle));
+        vm.deal(buyer, 5 ether); // Fund the buyer
     }
 
     function testCapSpike() public {
@@ -32,18 +33,19 @@ contract CapSpikeOptionTest is Test {
         uint256 cap = 120;
         uint256 maxSold = 10;
         uint256 maxPay = (cap - strike) * 1 gwei * maxSold;
+        uint256 expiry = block.timestamp + 3601;
 
         // writer create series with margin
-        desk.create{value: maxPay}(1, strike, cap, block.timestamp + 360, maxSold);
+        desk.create{value: maxPay}(1, strike, cap, expiry, maxSold);
 
         // buyer purchase to create open interest
-        uint256 prem = desk.premium(strike, block.timestamp + 360);
+        uint256 prem = desk.premium(strike, expiry);
         vm.deal(address(1), prem);
         vm.prank(address(1));
         desk.buy{value: prem}(1, 1);
 
         // warp to expiry+1 and push fee above cap
-        vm.warp(block.timestamp + 361);
+        vm.warp(expiry + 1);
         uint256 fee = 200;
         uint256 dl = block.timestamp + 30;
         bytes32 domain = keccak256(abi.encode(
@@ -61,36 +63,45 @@ contract CapSpikeOptionTest is Test {
         oracle.push(BlobFeeOracle.FeedMsg({fee: fee, deadline: dl}), sigs); // fee higher than cap
 
         desk.settle(1);
-        (, , , , uint256 payWei, , , ) = desk.series(1);
+        (, , , , , uint256 payWei, , ) = desk.series(1);
         assertEq(payWei, (cap - strike) * 1 gwei);
     }
 
     function testBuy() public {
         // series has a high K, so it's cheap
+        uint256 expiry_ = block.timestamp + 3601;
+        desk.create{value: 1 ether}(1, 100, 120, expiry_, 10);
         (
             address writer_addr,
-            uint256 k,
+            uint256 strike,
+            uint256 cap,
             uint256 expiry,
-            uint256 premium,
-            uint256 margin,
-            uint256 maxSold,
             uint256 sold,
-            bool live
+            uint256 payoutPerUnit,
+            uint256 margin,
+            bool paidOut
         ) = desk.series(1);
         vm.startPrank(buyer);
-        uint256 expectedPremium = desk.premium(1, 1e18);
+        uint256 expectedPremium = desk.premium(100, expiry);
         desk.buy{value: expectedPremium}(1, 1);
         vm.stopPrank();
 
         // check that the series is no longer live
-        (address writer2, uint256 k2, uint256 expiry2, uint256 premium2, uint256 margin2, uint256 maxSold2, uint256 sold2, bool live2) = desk.series(1);
+        (
+            address writer2,
+            uint256 strike2,
+            uint256 cap2,
+            uint256 expiry2,
+            uint256 sold2,
+            uint256 payoutPerUnit2,
+            uint256 margin2,
+            bool paidOut2
+        ) = desk.series(1);
         assertEq(writer2, writer_addr);
-        assertEq(k2, 1);
+        assertEq(strike2, 100);
         assertEq(expiry2, expiry);
-        assertEq(premium2, premium);
         assertEq(margin2, margin);
-        assertEq(maxSold2, maxSold);
         assertEq(sold2, 1);
-        assertEq(live2, false);
+        assertEq(paidOut2, false);
     }
 }

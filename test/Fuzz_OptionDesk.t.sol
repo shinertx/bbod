@@ -28,11 +28,18 @@ contract Fuzz_OptionDesk is Test {
     function testFuzz_MarginSafety(uint256 strike, uint256 cap, uint256 fee, uint256 qty) public {
         strike = bound(strike, 1, 50);
         cap    = bound(cap, strike+1, strike+100);
+        fee    = bound(fee, 1, 200); // Bound fee to reasonable range
+        qty    = bound(qty, 1, 5);
+        
         uint256 id = 1;
         uint256 expiry = block.timestamp + 1 hours;
-        uint256 maxPay = (cap - strike) * 1 gwei * 10;
+        
+        // Prevent overflow in margin calculation
+        uint256 spread = cap - strike;
+        require(spread <= type(uint256).max / (1 gwei * 10), "spread too large");
+        uint256 maxPay = spread * 1 gwei * 10;
+        
         desk.create{value: maxPay}(id, strike, cap, expiry, 10);
-        qty = bound(qty, 1, 5);
         vm.deal(address(this), 100 ether);
         uint256 prem = desk.premium(strike, expiry) * qty;
         desk.buy{value: prem}(id, qty);

@@ -14,7 +14,7 @@ contract BlobOptionDesk is ReentrancyGuard {
         uint256 cap;
         uint256 expiry;
         uint256 sold;
-        uint256 payWei;
+        uint256 payoutPerUnit;
         uint256 margin;
         bool paidOut;
     }
@@ -71,7 +71,7 @@ contract BlobOptionDesk is ReentrancyGuard {
             cap: cap,
             expiry: expiry,
             sold: 0,
-            payWei: 0,
+            payoutPerUnit: 0,
             margin: msg.value,
             paidOut: false
         });
@@ -85,10 +85,17 @@ contract BlobOptionDesk is ReentrancyGuard {
 
     function buy(uint256 id, uint256 num) public payable notPaused {
         Series storage s = series[id];
+        console.log("s.writer", s.writer);
         if (s.writer == address(0)) revert("bad-series");
+        console.log("block.timestamp", block.timestamp);
+        console.log("s.expiry - BUY_CUTOFF", s.expiry - BUY_CUTOFF);
         if (block.timestamp > s.expiry - BUY_CUTOFF) revert("too-late-to-buy");
+        console.log("s.sold + num", s.sold + num);
+        console.log("seriesMaxSold[id]", seriesMaxSold[id]);
         if (s.sold + num > seriesMaxSold[id]) revert("sold-out");
         uint256 expected = premium(s.strike, s.expiry) * num;
+        console.log("msg.value", msg.value);
+        console.log("expected", expected);
         if (msg.value != expected) revert("bad-premium");
         s.sold += num;
         bal[msg.sender][id] += num;
@@ -103,30 +110,32 @@ contract BlobOptionDesk is ReentrancyGuard {
     function exercise(uint256 id, uint256 num) public nonReentrant {
         Series storage s = series[id];
         if (s.writer == address(0)) revert("bad-series");
-        if (block.timestamp < s.expiry) revert("too-soon");
+        if (!seriesSettled[id]) revert("not-settled");
         if (block.timestamp > s.expiry + GRACE_PERIOD()) revert("too-late-to-exercise");
         if (bal[msg.sender][id] < num) revert("insufficient-balance");
 
         bal[msg.sender][id] -= num;
-        uint256 baseFee = F.blobBaseFee();
-        uint256 payout;
-        if (baseFee > s.strike) {
-            payout = baseFee - s.strike;
-            if (payout > s.cap) {
-                payout = s.cap;
-                emit PayCapped(id, baseFee - s.strike, s.cap);
-            }
-        }
-        s.payWei += num * payout;
-        payable(msg.sender).transfer(num * payout);
+        uint256 totalPayout = num * s.payoutPerUnit;
+        payable(msg.sender).transfer(totalPayout);
     }
 
     function settle(uint256 id) public {
         Series storage s = series[id];
         if (s.writer == address(0)) revert("bad-series");
         if (seriesSettled[id]) revert("already-settled");
-        if (block.timestamp < s.expiry + 1 hours) revert("too-soon");
+        if (block.timestamp < s.expiry) revert("too-soon");
         seriesSettled[id] = true;
+
+        uint256 baseFee = F.blobBaseFee();
+        uint256 payout;
+        if (baseFee > s.strike) {
+            payout = (baseFee - s.strike) * 1 gwei;
+            if (baseFee > s.cap) {
+                payout = (s.cap - s.strike) * 1 gwei;
+                emit PayCapped(id, baseFee - s.strike, s.cap);
+            }
+        }
+        s.payoutPerUnit = payout;
 
         uint256 bounty = s.margin / 100;
         payable(msg.sender).transfer(bounty);
@@ -144,9 +153,11 @@ contract BlobOptionDesk is ReentrancyGuard {
         if (block.timestamp < s.expiry + GRACE_PERIOD()) revert("grace");
         if (s.margin == 0) revert("no-margin");
 
+        uint256 totalPayoutLiability = s.sold * s.payoutPerUnit;
         uint256 margin = s.margin;
         s.margin = 0;
-        payable(msg.sender).transfer(margin - s.payWei - (margin / 100));
+        uint256 bounty = margin / 100;
+        payable(msg.sender).transfer(margin - totalPayoutLiability - bounty);
     }
 
     function withdrawPremium(uint256 id) public {

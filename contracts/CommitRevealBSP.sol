@@ -22,20 +22,24 @@ contract CommitRevealBSP is ReentrancyGuard {
         bytes32 commit;
         uint256 amount;
         Side    side;    // side revealed by user
+        bool claimed; // whether the user has claimed their payout
     }
 
     struct Round {
-        uint256 openTs;
+        uint256 id;
         uint256 closeTs;
         uint256 revealTs;
-        uint256 hiPool;
-        uint256 loPool;
-        uint256 rake;
-        uint256 bounty;
-        uint256 thresholdGwei;
+        uint256 settleTs;
+        uint256 hiTotal;
+        uint256 loTotal;
+        uint256 totalCommits;
+        Side winner;
+        uint256 threshold;
+        bytes32 thresholdCommit;
         uint256 feeResult; // oracle fee for the round (gwei)
         uint256 settlePriceGwei;
         bool settled;
+        uint256 bounty;
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -92,6 +96,9 @@ contract CommitRevealBSP is ReentrancyGuard {
         _open(100 gwei); // bootstrap with default 100 gwei threshold
     }
 
+    // Allow contract to receive ETH
+    receive() external payable {}
+
     /*//////////////////////////////////////////////////////////////////////////
                                     MODIFIERS
     //////////////////////////////////////////////////////////////////////////*/
@@ -112,7 +119,7 @@ contract CommitRevealBSP is ReentrancyGuard {
         require(msg.value >= MIN_BET, "dust");
         require(tickets[cur][msg.sender].commit == 0, "dup");
 
-        tickets[cur][msg.sender] = Ticket({commit: h, amount: msg.value, side: Side.Hi});
+        tickets[cur][msg.sender] = Ticket({commit: h, amount: msg.value, side: Side.Hi, claimed: false});
         emit Commit(cur, msg.sender, msg.value);
     }
 
@@ -125,9 +132,9 @@ contract CommitRevealBSP is ReentrancyGuard {
         require(T.commit == keccak256(abi.encodePacked(msg.sender, side, salt)), "bad");
 
         if (side == Side.Hi) {
-            R.hiPool += T.amount;
+            R.hiTotal += T.amount;
         } else {
-            R.loPool += T.amount;
+            R.loTotal += T.amount;
         }
 
         // persist revealed side to prevent later spoofing
@@ -152,11 +159,11 @@ contract CommitRevealBSP is ReentrancyGuard {
                 nextThr = nextThreshold;
             } else {
                 // timed out, use current threshold for next round
-                nextThr = R.thresholdGwei;
+                nextThr = R.threshold;
             }
         } else {
             // no commit for this round, carry over threshold
-            nextThr = R.thresholdGwei;
+            nextThr = R.threshold;
         }
 
         uint256 feeGwei = F.blobBaseFee();
@@ -166,11 +173,14 @@ contract CommitRevealBSP is ReentrancyGuard {
         R.settlePriceGwei = feeGwei;
         R.settled = true;
 
-        uint256 gross = R.hiPool + R.loPool;
+        // Determine winner based on fee vs threshold
+        bool hiWin = feeGwei >= R.threshold;
+        R.winner = hiWin ? Side.Hi : Side.Lo;
+
+        uint256 gross = R.hiTotal + R.loTotal;
 
         // Winner-less rescue: if everyone is on one side we skip rake and allow refunds.
-        if (R.hiPool == 0 || R.loPool == 0) {
-            R.rake = 0;
+        if (R.hiTotal == 0 || R.loTotal == 0) {
             R.bounty = 0;
             emit Settled(cur, feeGwei, 0, 0);
             uint256 thr = nextThr;
@@ -183,7 +193,6 @@ contract CommitRevealBSP is ReentrancyGuard {
 
         uint256 bounty = gross * SETTLE_BOUNTY_BP / 10_000;
         uint256 rakeAmount = gross * RAKE_BP / 10_000;
-        R.rake = rakeAmount;
         R.bounty = bounty;
         if (bounty > 0) _safeSend(msg.sender, bounty);
         _safeSend(owner, rakeAmount);
@@ -200,34 +209,34 @@ contract CommitRevealBSP is ReentrancyGuard {
                                  POST-SETTLEMENT
     //////////////////////////////////////////////////////////////////////////*/
 
-    function claim(uint256 id, Side side, bytes32 /*salt*/) external nonReentrant notPaused {
-        Round storage R = rounds[id];
-        require(R.settled, "unsettled");
+    function claim(uint256 roundId, Side side, bytes32 salt) public nonReentrant notPaused {
+        Round storage r = rounds[roundId];
+        require(r.settled, "unsettled");
 
-        Ticket storage T = tickets[id][msg.sender];
+        Ticket storage bet = tickets[roundId][msg.sender];
 
-        bool oneSided = (R.hiPool == 0 || R.loPool == 0);
+        bool oneSided = (r.hiTotal == 0 || r.loTotal == 0);
 
-        if (T.commit == 0) {
+        if (bet.commit == 0) {
             // Revealed path
             if (oneSided) {
                 // round has no winners – refund
-                uint256 refund = T.amount * 995 / 1000;
-                tickets[id][msg.sender].amount = 0;
+                uint256 refund = bet.amount;
+                tickets[roundId][msg.sender].amount = 0;
                 _safeSend(msg.sender, refund);
-                emit Refund(id, msg.sender, refund);
+                emit Refund(roundId, msg.sender, refund);
             } else {
                 // ensure user cannot spoof a different side after reveal
-                require(tickets[id][msg.sender].side == side, "side-mismatch");
-                _payout(id, msg.sender);
+                require(tickets[roundId][msg.sender].side == side, "side-mismatch");
+                _payout(roundId, msg.sender);
             }
         } else {
             // Non-revealed ticket forfeits full stake to house after grace
-            require(block.timestamp > R.revealTs + GRACE_NONREVEAL, "grace");
-            uint256 burn = T.amount;
-            delete tickets[id][msg.sender];
+            require(block.timestamp > r.revealTs + GRACE_NONREVEAL, "grace");
+            uint256 burn = bet.amount;
+            delete tickets[roundId][msg.sender];
             _safeSend(owner, burn);
-            emit Refund(id, msg.sender, 0);
+            emit Refund(roundId, msg.sender, 0);
         }
     }
 
@@ -236,23 +245,31 @@ contract CommitRevealBSP is ReentrancyGuard {
     //////////////////////////////////////////////////////////////////////////*/
 
     function _payout(uint256 id, address who) internal {
-        Round storage R = rounds[id];
+        Round storage r = rounds[id];
         Side side = tickets[id][who].side;
-        bool hiWin = R.feeResult >= R.thresholdGwei;
+        bool hiWin = r.feeResult >= r.threshold;
         bool win = (hiWin && side == Side.Hi) || (!hiWin && side == Side.Lo);
         require(win, "lose");
 
-        uint256 poolWin = hiWin ? R.hiPool : R.loPool;
-        uint256 total = R.hiPool + R.loPool - R.rake - R.bounty;
+        uint256 totalWinnerStake = (r.winner == Side.Hi) ? r.hiTotal : r.loTotal;
+        uint256 totalLoserStake = (r.winner == Side.Hi) ? r.loTotal : r.hiTotal;
 
-        uint256 share = tickets[id][who].amount;
-        require(share > 0, "none");
-        tickets[id][who].amount = 0;
-
-        uint256 pay = (share * total) / poolWin;
-        require(pay > 0, "dust");
-        _safeSend(who, pay);
-        emit Payout(id, who, pay);
+        // if one side has no bets, they can't win the pot
+        uint256 pay;
+        if (r.hiTotal == 0 || r.loTotal == 0) {
+            pay = tickets[id][who].amount;
+            _safeSend(who, pay);
+            return;
+        }
+        
+        uint256 nonRevealedStake = r.totalCommits - r.hiTotal - r.loTotal;
+        uint256 pot = totalLoserStake + nonRevealedStake;
+        uint256 payout = tickets[id][who].amount + (tickets[id][who].amount * pot) / totalWinnerStake;
+        
+        uint256 rake = (payout * RAKE_BP) / 10_000;
+        tickets[id][who].claimed = true;
+        _safeSend(who, payout - rake);
+        emit Payout(id, who, payout - rake);
     }
 
     function _open(uint256 thresholdGwei) internal {
@@ -261,17 +278,20 @@ contract CommitRevealBSP is ReentrancyGuard {
         uint256 closeTs = openTs + ROUND_DURATION;
         uint256 revealTs = closeTs + REVEAL_WINDOW;
         rounds[cur] = Round({
-            openTs: openTs,
+            id: cur,
             closeTs: closeTs,
             revealTs: revealTs,
-            hiPool: 0,
-            loPool: 0,
-            rake: 0,
-            bounty: 0,
-            thresholdGwei: thresholdGwei,
+            settleTs: 0,
+            hiTotal: 0,
+            loTotal: 0,
+            totalCommits: 0,
+            winner: Side.Hi,
+            threshold: thresholdGwei,
+            thresholdCommit: 0,
             feeResult: 0,
             settlePriceGwei: 0,
-            settled: false
+            settled: false,
+            bounty: 0
         });
         emit NewRound(cur, closeTs, revealTs, thresholdGwei);
     }

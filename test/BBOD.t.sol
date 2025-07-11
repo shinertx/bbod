@@ -15,6 +15,7 @@ contract BBODFuzz is Test {
     address[] signers;
     uint256 private PK = 0xA11CE;
     address private signer;
+    address private writer;
 
     // allow this contract to receive ETH refunds
     receive() external payable {}
@@ -23,6 +24,7 @@ contract BBODFuzz is Test {
         signer = vm.addr(PK);
         signers.push(signer);
         oracle = new BlobFeeOracle(signers, 1);
+        writer = msg.sender;
         desk = new BlobOptionDesk(address(oracle));
         vm.deal(address(this), 100 ether);
     }
@@ -35,6 +37,7 @@ contract BBODFuzz is Test {
         // create series
         uint256 cap = strike + 50;
         uint256 expiry = block.timestamp + 1 hours;
+        vm.prank(writer);
         desk.create{value: 10 ether}(1, strike, cap, expiry, 100);
 
         // buy option
@@ -62,6 +65,7 @@ contract BBODFuzz is Test {
         oracle.push(BlobFeeOracle.FeedMsg({fee: fee, deadline: dl}), sigs);
 
         // exercise
+        desk.settle(1);
         if (fee > strike) {
             vm.prank(buyer);
             desk.exercise(1, 1);
@@ -69,6 +73,7 @@ contract BBODFuzz is Test {
 
         // settle
         vm.warp(expiry + 1 hours + 1);
-        desk.settle(1);
+        vm.prank(writer);
+        desk.withdrawMargin(1);
     }
 }

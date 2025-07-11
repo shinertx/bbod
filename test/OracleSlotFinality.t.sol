@@ -34,7 +34,7 @@ contract OracleSlotFinality is Test {
         uint256 dl = block.timestamp + 30;
         bytes[] memory sigs = _sig(50, dl);
         oracle.push(BlobFeeOracle.FeedMsg({fee:50, deadline:dl}), sigs);
-        vm.expectRevert("already-pushed");
+        vm.expectRevert("pushed");
         oracle.push(BlobFeeOracle.FeedMsg({fee:50, deadline:dl}), sigs);
     }
 }

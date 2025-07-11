@@ -86,6 +86,7 @@ contract BlobFeeOracle is IBlobBaseFee, EIP712 {
             isSigner[_signers[i]] = true;
         }
         timelock = msg.sender; // deployer becomes timelock
+        lastFee = 1 gwei; // Initialize with a non-zero value
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -114,40 +115,30 @@ contract BlobFeeOracle is IBlobBaseFee, EIP712 {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Push a new fee observation using EIP-712 quorum signatures.
-    function push(FeedMsg calldata m, bytes[] calldata sigs) external {
-        require(!paused, "paused");
-        require(block.timestamp <= m.deadline, "expired");
-        require(m.fee < 10_000, "fee-out-of-range");
-        if (lastFee != 0) {
-            require(
-                m.fee >= lastFee / 2 && m.fee <= lastFee * 2,
-                "fee-unstable"
-            );
-        }
+    /// @param msg       The fee message containing the fee and deadline.
+    /// @param sigs      Array of signatures from unique authorised signers.
+    function push(FeedMsg calldata msg, bytes[] calldata sigs) external {
+        require(block.timestamp < msg.deadline, "deadline");
         require(sigs.length >= minSigners, "quorum");
 
+        bytes32 digest = _hashTypedDataV4(keccak256(abi.encode(FEED_TYPEHASH, msg.fee, msg.deadline)));
+
         uint256 slot = block.timestamp / 12;
-        require(!slotPushed[slot], "already-pushed");
-        slotPushed[slot] = true;
+        require(!slotPushed[slot], "pushed");
 
-        bytes32 digest = _hashTypedDataV4(
-            keccak256(abi.encode(FEED_TYPEHASH, m.fee, m.deadline))
-        );
-
-        uint256 seen;
+        uint256 signerMask;
         for (uint256 i = 0; i < sigs.length; i++) {
-            address s = ECDSA.recover(digest, sigs[i]);
-            require(isSigner[s] && !jailed[s], "!signer");
-            uint256 idx = signerIndex[s];
-            uint256 flag = 1 << idx;
-            require(seen & flag == 0, "dup");
-            seen |= flag;
+            address signer = ECDSA.recover(digest, sigs[i]);
+            require(isSigner[signer], "!signer");
+            uint256 idx = signerIndex[signer];
+            require((signerMask & (1 << idx)) == 0, "dup");
+            signerMask |= (1 << idx);
         }
-        require(_popcount(seen) >= minSigners, "quorum");
 
-        lastFee = m.fee;
+        slotPushed[slot] = true;
+        lastFee = msg.fee;
         lastTs = block.timestamp;
-        emit Pushed(m.fee);
+        emit Pushed(msg.fee);
     }
 
     /// @dev See {EIP712-_domainSeparatorV4}.

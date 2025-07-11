@@ -3,15 +3,23 @@ pragma solidity ^0.8.23;
 
 import "forge-std/Test.sol";
 import "../contracts/BlobOptionDesk.sol";
+import "../contracts/IBlobBaseFee.sol";
+
+contract MockOracle is IBlobBaseFee {
+    uint256 public fee = 1 gwei;
+    function blobBaseFee() external view returns (uint256) { return fee; }
+}
 
 contract WriterPremiumUnlock is Test {
     BlobOptionDesk desk;
+    MockOracle oracle;
 
     // allow contract to receive ETH during test
     receive() external payable {}
 
     function setUp() public {
-        desk = new BlobOptionDesk(address(0));
+        oracle = new MockOracle();
+        desk = new BlobOptionDesk(address(oracle));
     }
 
     function testUnlock() public {
@@ -30,8 +38,8 @@ contract WriterPremiumUnlock is Test {
         vm.prank(address(1));
         desk.buy{value: p}(id, 1);
 
-        // Fast-forward 1 hour so premiums unlock
-        vm.warp(block.timestamp + 3601);
+        // Fast-forward past expiry + 1 hour so premiums unlock
+        vm.warp(expiry + 1 hours + 1);
 
         uint256 balBefore = address(this).balance;
         desk.withdrawPremium(id);

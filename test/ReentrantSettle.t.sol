@@ -38,20 +38,28 @@ contract ReentrantSettle is Test {
     }
 
     function testReentrancyGuard() public {
-        oracle.setFee(30); // Set fee above default threshold of 25
+        oracle.setFee(30 * 1 gwei); // Set fee above default threshold of 25 gwei
+        
+        // Add threshold commit/reveal so settlement can proceed
+        vm.prank(pm.owner());
+        pm.commitThreshold(keccak256(abi.encodePacked(uint256(25 gwei), uint256(12345))));
+        vm.prank(pm.owner());
+        pm.revealThreshold(25 gwei, 12345);
+        
         vm.prank(address(atk));
         pm.commit{value:1 ether}(keccak256(abi.encodePacked(address(atk), CommitRevealBSP.Side.Hi, bytes32("s"))));
         vm.prank(alice);
         pm.commit{value:1 ether}(keccak256(abi.encodePacked(alice, CommitRevealBSP.Side.Lo, bytes32("s_alice"))));
 
-        vm.warp(block.timestamp + 301);
+        (, uint256 closeTs, , , , , , , , , , , , ) = pm.rounds(1);
+        vm.warp(closeTs + 1);
 
         vm.prank(address(atk));
         pm.reveal(CommitRevealBSP.Side.Hi, bytes32("s"));
         vm.prank(alice);
         pm.reveal(CommitRevealBSP.Side.Lo, bytes32("s_alice"));
 
-        (, , uint256 revealTs, , , , , , , , ) = pm.rounds(1);
+        (, , uint256 revealTs, , , , , , , , , , , ) = pm.rounds(1);
         vm.warp(revealTs + 1);
         vm.prank(address(atk));
         vm.expectRevert(bytes("xfer"));
