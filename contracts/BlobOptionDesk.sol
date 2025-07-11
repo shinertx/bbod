@@ -5,16 +5,20 @@ import "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import "forge-std/console.sol";
 
 contract BlobOptionDesk is ReentrancyGuard {
+    uint256 constant MIN_EXPIRY = 1 hours;
+    uint256 constant BUY_CUTOFF = 5 minutes;
+
     struct Series {
+        address writer;
         uint256 strike;
         uint256 cap;
         uint256 expiry;
         uint256 sold;
         uint256 payWei;
         uint256 margin;
+        bool paidOut;
     }
 
-    address public immutable writer;
     /// @notice Premium scale factor. Tuned so one-hour options cost ~0.001 ETH.
     uint256 public k = 7e13;
     IBlobBaseFee public immutable F;
@@ -39,157 +43,144 @@ contract BlobOptionDesk is ReentrancyGuard {
     bool public paused;
     modifier notPaused() { require(!paused, "paused"); _; }
 
-    constructor(address feeOracle) payable {
+    address public writer;
+
+    constructor(address feeOracle) {
         writer = msg.sender;
         F = IBlobBaseFee(feeOracle);
     }
 
     function pause(bool p) external {
-        require(msg.sender == writer, "!auth");
+        require(msg.sender == writer, "not-writer");
         paused = p;
     }
 
-    function setK(uint256 newK) external notPaused {
-        require(msg.sender == writer, "!auth");
-        k = newK;
-    }
+    /*//////////////////////////////////////////////////////////////////////////
+                                   SERIES MGMT
+    //////////////////////////////////////////////////////////////////////////*/
 
-    function create(
-        uint256 id,
-        uint256 strikeGwei,
-        uint256 capGwei,
-        uint256 expiry,
-        uint256 maxSold
-    ) external payable {
-        require(msg.sender == writer, "!w");
-        require(series[id].strike == 0, "exists");
-        require(expiry > block.timestamp, "bad-expiry");
-        require(capGwei > strikeGwei, "cap<=strike");
-        require(capGwei - strikeGwei <= 100, "cap too high");
-        uint256 maxPay = (capGwei - strikeGwei) * 1 gwei * maxSold;
-        require(maxPay <= 100 ether, "liability");
-        require(msg.value >= maxPay, "insuff margin");
+    function create(uint256 id, uint256 strike, uint256 cap, uint256 expiry, uint256 maxSold) public payable {
+        if (series[id].writer != address(0)) revert("series-exists");
+        if (strike == 0) revert("0-strike");
+        if (expiry < block.timestamp + MIN_EXPIRY) revert("too-soon");
+        if (msg.value == 0) revert("no-margin");
+
         series[id] = Series({
-            strike: strikeGwei,
-            cap: capGwei,
+            writer: msg.sender,
+            strike: strike,
+            cap: cap,
             expiry: expiry,
             sold: 0,
             payWei: 0,
-            margin: msg.value
+            margin: msg.value,
+            paidOut: false
         });
         seriesMaxSold[id] = maxSold;
+        unlockTs[id] = expiry + 1 hours;
     }
 
-    function optionCost(uint256 strike, uint256 expiry)
-        public view returns (uint256 timeValue, uint256 intrinsic)
-    {
-        uint256 T = expiry - block.timestamp;
-        uint256 sigma = 12e7; // scaled volatility proxy
-        timeValue = k * sigma * sqrt((T) * 1e18 / 3600) / 1e18;
-        uint256 feeNow = F.blobBaseFee();
-        intrinsic = feeNow > strike ? (feeNow - strike) * 1 gwei : 0;
+    /*//////////////////////////////////////////////////////////////////////////
+                                   TRADING
+    //////////////////////////////////////////////////////////////////////////*/
+
+    function buy(uint256 id, uint256 num) public payable notPaused {
+        Series storage s = series[id];
+        if (s.writer == address(0)) revert("bad-series");
+        if (block.timestamp > s.expiry - BUY_CUTOFF) revert("too-late-to-buy");
+        if (s.sold + num > seriesMaxSold[id]) revert("sold-out");
+        uint256 expected = premium(s.strike, s.expiry) * num;
+        if (msg.value != expected) revert("bad-premium");
+        s.sold += num;
+        bal[msg.sender][id] += num;
+        premCollected[id] += msg.value;
+        emit Purchase(id, msg.sender, num, premium(s.strike, s.expiry) - intrinsic(s.strike), intrinsic(s.strike));
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                                   SETTLEMENT
+    //////////////////////////////////////////////////////////////////////////*/
+
+    function exercise(uint256 id, uint256 num) public nonReentrant {
+        Series storage s = series[id];
+        if (s.writer == address(0)) revert("bad-series");
+        if (block.timestamp < s.expiry) revert("too-soon");
+        if (bal[msg.sender][id] < num) revert("insufficient-balance");
+
+        bal[msg.sender][id] -= num;
+        uint256 baseFee = F.blobBaseFee();
+        uint256 payout;
+        if (baseFee > s.strike) {
+            payout = baseFee - s.strike;
+            if (payout > s.cap) {
+                payout = s.cap;
+                emit PayCapped(id, baseFee - s.strike, s.cap);
+            }
+        }
+        s.payWei += num * payout;
+        payable(msg.sender).transfer(num * payout);
+    }
+
+    function settle(uint256 id) public {
+        Series storage s = series[id];
+        if (s.writer == address(0)) revert("bad-series");
+        if (seriesSettled[id]) revert("already-settled");
+        if (block.timestamp < s.expiry + 1 hours) revert("too-soon");
+        seriesSettled[id] = true;
+
+        uint256 bounty = s.margin / 100;
+        payable(msg.sender).transfer(bounty);
+        emit SettleBounty(id, msg.sender, bounty);
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                                   WITHDRAWALS
+    //////////////////////////////////////////////////////////////////////////*/
+
+    function withdrawMargin(uint256 id) public {
+        Series storage s = series[id];
+        if (s.writer != msg.sender) revert("not-writer");
+        if (!seriesSettled[id]) revert("not-settled");
+        if (s.margin == 0) revert("no-margin");
+
+        uint256 margin = s.margin;
+        s.margin = 0;
+        payable(msg.sender).transfer(margin - s.payWei - (margin / 100));
+    }
+
+    function withdrawPremium(uint256 id) public {
+        Series storage s = series[id];
+        if (s.writer != msg.sender) revert("not-writer");
+        if (block.timestamp < unlockTs[id]) revert("locked");
+        if (s.paidOut) revert("paid-out");
+
+        s.paidOut = true;
+        uint256 amount = premCollected[id];
+        premCollected[id] = 0;
+        payable(msg.sender).transfer(amount);
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                                   VIEW
+    //////////////////////////////////////////////////////////////////////////*/
+    function GRACE_PERIOD() public pure returns (uint256) {
+        return 1 hours;
+    }
+
+    function SETTLE_BOUNTY_BP() public pure returns (uint256) {
+        return 100;
     }
 
     function premium(uint256 strike, uint256 expiry) public view returns (uint256) {
-        (uint256 tv, uint256 iv) = optionCost(strike, expiry);
-        return tv + iv;
+        uint256 t = expiry - block.timestamp;
+        return k * t + intrinsic(strike);
+    }
+    function intrinsic(uint256 strike) public view returns (uint256) {
+        uint256 feeNow = F.blobBaseFee();
+        return feeNow > strike ? (feeNow - strike) * 1 gwei : 0;
     }
     function sqrt(uint256 y) internal pure returns (uint256 z) {
         if (y > 3) { z = y; uint256 x = y/2+1; while (x < z){ z=x; x=(y/x + x)/2; }} else if (y!=0) z = 1;
     }
-
-    function buy(uint256 id, uint256 qty) external payable notPaused {
-        Series storage s = series[id];
-        require(block.timestamp + 300 < s.expiry, "too-late-to-buy");
-        (uint256 tv, uint256 iv) = optionCost(s.strike, s.expiry);
-        uint256 cost = (tv + iv) * qty;
-        require(msg.value == cost, "!prem");
-        require(s.sold + qty <= seriesMaxSold[id], "maxSold exceeded");
-        s.sold += qty;
-        bal[msg.sender][id] += qty;
-
-        emit Purchase(id, msg.sender, qty, tv, iv);
-
-        // add to series-level premium pot & (re)start 1h escrow timer
-        premCollected[id] += msg.value;
-        if (unlockTs[id] == 0) {
-            unlockTs[id] = block.timestamp + 1 hours;
-        }
-    }
-
-    function settle(uint256 id) external nonReentrant notPaused {
-        Series storage s = series[id];
-        require(block.timestamp >= s.expiry, "!exp");
-        require(!seriesSettled[id], "series settled");
-        uint256 fee = F.blobBaseFee();
-        uint256 cap = s.cap;
-        if (fee > cap) fee = cap;
-        uint256 rawPay = fee > s.strike ? (fee - s.strike) * 1 gwei : 0;
-        uint256 maxPayPerOpt = s.sold == 0 ? 0 : s.margin / s.sold;
-        s.payWei = rawPay > maxPayPerOpt ? maxPayPerOpt : rawPay;
-        if (rawPay > maxPayPerOpt) {
-            emit PayCapped(id, rawPay, maxPayPerOpt);
-        }
-
-        // bounty to caller based only on this series' margin
-        uint256 bounty = s.margin * SETTLE_BOUNTY_BP / 10_000;
-
-        seriesSettled[id] = true;
-
-        if (bounty > 0) {
-            s.margin -= bounty;
-            _safeSend(msg.sender, bounty);
-            emit SettleBounty(id, msg.sender, bounty);
-        }
-    }
-    function exercise(uint256 id) external nonReentrant notPaused {
-        Series storage s = series[id];
-        require(seriesSettled[id], "unsettled");
-        uint256 qty = bal[msg.sender][id];
-        bal[msg.sender][id] = 0;
-        uint256 due = qty * s.payWei;
-        require(address(this).balance >= due, "insolv");
-        require(s.margin >= due, "margin");
-        s.sold -= qty;
-        s.margin -= due;
-        _safeSend(msg.sender, due);
-    }
-
-    /// @notice Withdraw writer margin once a series is settled.
-    ///         All withdrawals are subject to a `GRACE_PERIOD` after expiry
-    ///         to give holders time to exercise their options.
-    function withdrawMargin(uint256 id) external nonReentrant notPaused {
-        Series storage s = series[id];
-        require(msg.sender == writer, "!w");
-        require(seriesSettled[id], "unsettled");
-        require(block.timestamp > s.expiry + GRACE_PERIOD, "grace");
-        uint256 amt = s.margin;
-        require(amt > 0, "none");
-        s.margin = 0;
-        _safeSend(writer, amt);
-    }
-
-    /// @notice Grace period after expiry before writer can reclaim margin.
-    uint256 public constant GRACE_PERIOD = 1 days;
-
-    /// @notice Withdraw unlocked premiums for a single series.
-    function withdrawPremium(uint256 id) external nonReentrant notPaused {
-        require(msg.sender == writer, "!auth");
-        require(unlockTs[id] != 0 && block.timestamp >= unlockTs[id], "locked");
-        uint256 amt = premCollected[id];
-        premCollected[id] = 0;
-        _safeSend(writer, amt);
-    }
-
-    /// @notice Top up margin for a specific series.  Allows writer (or anyone)
-    ///         to add additional collateral if volatility spikes.
-    function topUpMargin(uint256 id) external payable notPaused {
-        Series storage s = series[id];
-        require(s.expiry != 0, "bad id");
-        s.margin += msg.value;
-    }
-
-    uint256 public constant SETTLE_BOUNTY_BP = 10; // 0.10 %
 
     /*//////////////////////////////////////////////////////////////////////////
                                SAFE ETH TRANSFER
@@ -201,4 +192,5 @@ contract BlobOptionDesk is ReentrancyGuard {
         (bool ok, ) = payable(to).call{value: amount}("");
         require(ok, "xfer");
     }
+    receive() external payable {}
 }

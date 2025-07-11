@@ -10,7 +10,7 @@ contract OptionExpiryValidation is Test {
     }
 
     function testBadExpiry() public {
-        vm.expectRevert("bad-expiry");
-        desk.create{value:1 ether}(1, 50, 75, block.timestamp, 1);
+        vm.expectRevert("too-soon");
+        desk.create{value: 1 ether}(1, 50, 75, block.timestamp, 1);
     }
 }

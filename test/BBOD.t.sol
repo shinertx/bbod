@@ -65,7 +65,7 @@ contract BBODFuzz is Test {
 
         if (fee > strike) {
             vm.prank(buyer);
-            desk.exercise(1);
+            desk.exercise(1, 1);
         }
     }
-} 
+}

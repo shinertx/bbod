@@ -20,13 +20,15 @@ contract ThresholdRevealEnforcement is Test {
     function setUp() public {
         signer = vm.addr(PK);
         signers.push(signer);
-
-        pm = new CommitRevealBSP(address(0));
+        oracle = new BlobFeeOracle(signers, 1);
+        pm = new CommitRevealBSP(address(oracle));
+        vm.deal(address(this), 10 ether);
     }
 
     function testSettleRevertsIfUnrevealed() public {
         // commit threshold for next round (round 2)
         bytes32 h = keccak256(abi.encodePacked(uint256(50), uint256(1)));
+        vm.prank(address(this));
         pm.commitThreshold(h);
 
         // settle round 1 (allowed even if next round unrevealed)
@@ -37,12 +39,13 @@ contract ThresholdRevealEnforcement is Test {
         // attempt to settle round 2 without revealing threshold
         (, , uint256 revealTs2,,,,,,,,) = pm.rounds(2);
         vm.warp(revealTs2 + 1);
-        vm.expectRevert("threshold-not-revealed");
+        vm.expectRevert(bytes("threshold-not-revealed"));
         pm.settle();
     }
 
     function testSettleAfterTimeoutUsesPrevThreshold() public {
         bytes32 h = keccak256(abi.encodePacked(uint256(75), uint256(1)));
+        vm.prank(address(this));
         pm.commitThreshold(h);
 
         (, , uint256 revealTs1,,,,,,,,) = pm.rounds(1);

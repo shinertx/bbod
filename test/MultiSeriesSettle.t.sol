@@ -18,6 +18,7 @@ contract MultiSeriesSettle is Test {
     bytes32 DOMAIN;
 
     receive() external payable {}
+    fallback() external payable {}
 
     function setUp() public {
         signer = vm.addr(PK);
@@ -63,9 +64,15 @@ contract MultiSeriesSettle is Test {
         vm.prank(settler);
         desk.settle(2);
 
+        // Advance time past grace period
+        vm.warp(expiry + 1 + 1 days);
+
         uint256 balBefore = address(this).balance;
         desk.withdrawMargin(1);
         desk.withdrawMargin(2);
-        assertEq(address(this).balance, balBefore + 2 ether);
+        // Each series pays a 0.1% bounty from margin
+        uint256 bounty = 1 ether * 10 / 10000; // 0.1% of 1 ether
+        uint256 expected = balBefore + 2 ether - 2 * bounty;
+        assertEq(address(this).balance, expected);
     }
 }

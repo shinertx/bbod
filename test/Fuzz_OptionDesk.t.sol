@@ -34,14 +34,13 @@ contract Fuzz_OptionDesk is Test {
         desk.create{value: maxPay}(id, strike, cap, expiry, 10);
         qty = bound(qty, 1, 5);
         vm.deal(address(this), 100 ether);
-        (uint256 tv, uint256 iv) = desk.optionCost(strike, expiry);
-        uint256 prem = (tv + iv) * qty;
+        uint256 prem = desk.premium(strike, expiry) * qty;
         desk.buy{value: prem}(id, qty);
         oracle.set(fee);
         vm.warp(expiry+1);
         desk.settle(id);
         uint256 before = address(desk).balance;
-        desk.exercise(id);
+        desk.exercise(id, qty);
         uint256 afterBal = address(desk).balance;
         assert(afterBal <= before);
     }

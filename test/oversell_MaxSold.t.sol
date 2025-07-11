@@ -28,8 +28,8 @@ contract OversellMaxSoldTest is Test {
         uint256 prem = desk.premium(strike, block.timestamp + 1 days);
         desk.buy{value: prem}(1, 1);
 
-        // Attempt to buy a second option should revert
-        vm.expectRevert("maxSold exceeded");
+        // Try to buy another one
+        vm.expectRevert("sold-out");
         desk.buy{value: prem}(1, 1);
     }
-} 
+}

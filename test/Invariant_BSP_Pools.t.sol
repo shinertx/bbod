@@ -26,6 +26,8 @@ contract Invariant_BSP_Pools is Test {
         vm.deal(bob,   100 ether);
     }
 
+    receive() external payable {}
+
     // simple invariant: after settle, gross pool equals hi+lo minus rake-bounty
     function testPoolsIntegrity() public {
         vm.prank(alice);
@@ -44,9 +46,10 @@ contract Invariant_BSP_Pools is Test {
         vm.warp(block.timestamp + 300);
         oracle.set(30); // some fee
         bsp.settle();
-        (,,,,,uint256 rake,uint256 bounty,,,,) = bsp.rounds(bsp.cur());
-        (,,,uint256 hiPool,uint256 loPool,,,,,,) = bsp.rounds(bsp.cur());
+        uint256 prevRound = bsp.cur() - 1;
+        (,,,,,uint256 rake,uint256 bounty,,,,) = bsp.rounds(prevRound);
+        (,,,uint256 hiPool,uint256 loPool,,,,,,) = bsp.rounds(prevRound);
         assertEq(hiPool+loPool, 2.2 ether);
         assertEq(rake + bounty <= 2.2 ether, true);
     }
-} 
+}

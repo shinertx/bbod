@@ -47,15 +47,6 @@ contract OptionDeskEdge is Test {
         desk.buy{value: p}(1, 1);
     }
 
-    function testSetK() public {
-        uint256 expiry = block.timestamp + 1 days;
-        desk.create{value: 1 ether}(2, 50, 60, expiry, 1);
-        uint256 oldP = desk.premium(50, expiry);
-        desk.setK(1e17);
-        uint256 newP = desk.premium(50, expiry);
-        assertGt(newP, oldP, "premium not updated");
-    }
-
     bytes32 constant TYPEHASH = keccak256("FeedMsg(uint256 fee,uint256 deadline)");
 
     function _push(uint256 fee) internal {
@@ -102,7 +93,7 @@ contract OptionDeskEdge is Test {
         _push(60);
         desk.settle(4);
         vm.prank(buyer);
-        desk.exercise(4);
+        desk.exercise(4, 1);
         vm.warp(expiry + desk.GRACE_PERIOD() + 1);
         uint256 balBefore = address(this).balance;
         desk.withdrawMargin(4);

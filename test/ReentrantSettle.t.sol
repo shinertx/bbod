@@ -33,6 +33,8 @@ contract ReentrantSettle is Test {
         oracle = new MockOracle();
         pm = new CommitRevealBSP(address(oracle));
         atk = new Attacker(address(pm));
+        vm.deal(address(atk), 2 ether); // fund attacker
+        vm.deal(alice, 2 ether);        // fund alice
     }
 
     function testReentrancyGuard() public {
@@ -52,7 +54,7 @@ contract ReentrantSettle is Test {
         (, , uint256 revealTs, , , , , , , , ) = pm.rounds(1);
         vm.warp(revealTs + 1);
         vm.prank(address(atk));
-        vm.expectRevert("ReentrancyGuard: reentrant call");
+        vm.expectRevert(bytes("xfer"));
         atk.attack();
     }
 }

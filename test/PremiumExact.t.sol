@@ -18,13 +18,13 @@ contract PremiumExact is Test {
 
     function testRejectUnderpay() public {
         uint256 p = desk.premium(50, block.timestamp + 1 hours);
-        vm.expectRevert("!prem");
+        vm.expectRevert("bad-premium");
         desk.buy{value: p - 1}(1, 1);
     }
 
     function testRejectOverpay() public {
         uint256 p = desk.premium(50, block.timestamp + 1 hours);
-        vm.expectRevert("!prem");
+        vm.expectRevert("bad-premium");
         desk.buy{value: p + 1}(1, 1);
     }
 }

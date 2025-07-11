@@ -2,11 +2,22 @@
 pragma solidity ^0.8.23;
 import "forge-std/Test.sol";
 import "../contracts/CommitRevealBSP.sol";
+import "../contracts/IBlobBaseFee.sol";
+
+contract DummyOracle is IBlobBaseFee {
+    uint256 public fee;
+    function blobBaseFee() external view returns (uint256) { return fee; }
+    function set(uint256 f) external { fee = f; }
+}
 
 contract BountySize is Test {
     CommitRevealBSP pm;
+    DummyOracle oracle;
     function setUp() public {
-        pm = new CommitRevealBSP(address(0));
+        oracle = new DummyOracle();
+        pm = new CommitRevealBSP(address(oracle));
+        vm.deal(address(this), 7 ether); // fund test contract for commit and gift
+        vm.deal(address(1), 2 ether);    // fund actor for commit
     }
 
     receive() external payable {}
