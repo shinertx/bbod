@@ -104,6 +104,11 @@ contract BlobFeeOracle is IBlobBaseFee, EIP712 {
         _;
     }
 
+    modifier onlyTimelock() {
+        require(msg.sender == timelock, "not timelock");
+        _;
+    }
+
     /*//////////////////////////////////////////////////////////////////////////
                                EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
@@ -143,6 +148,11 @@ contract BlobFeeOracle is IBlobBaseFee, EIP712 {
         lastFee = m.fee;
         lastTs = block.timestamp;
         emit Pushed(m.fee);
+    }
+
+    /// @dev See {EIP712-_domainSeparatorV4}.
+    function DOMAIN_SEPARATOR() external view returns (bytes32) {
+        return _domainSeparatorV4();
     }
 
     /*//////////////////////////////////////////////////////////////////////////

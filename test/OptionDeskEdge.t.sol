@@ -33,6 +33,9 @@ contract OptionDeskEdge is Test {
         );
     }
 
+    // Allow the test contract to receive ETH
+    receive() external payable {}
+
     function testBuyCutoff() public {
         uint256 expiry = block.timestamp + 1000;
         desk.create{value: 1 ether}(1, 50, 60, expiry, 1);
@@ -74,7 +77,8 @@ contract OptionDeskEdge is Test {
         vm.warp(expiry + desk.GRACE_PERIOD() + 1);
         uint256 balBefore = address(this).balance;
         desk.withdrawMargin(3);
-        assertEq(address(this).balance, balBefore + 1 ether);
+        uint256 bounty = 1 ether * desk.SETTLE_BOUNTY_BP() / 10_000;
+        assertEq(address(this).balance, balBefore + 1 ether - bounty);
     }
 
     function testWithdrawMarginTooEarly() public {
@@ -101,7 +105,7 @@ contract OptionDeskEdge is Test {
         desk.exercise(4);
         vm.warp(expiry + desk.GRACE_PERIOD() + 1);
         uint256 balBefore = address(this).balance;
-        desk.sweepMargin(4);
+        desk.withdrawMargin(4);
         assertGt(address(this).balance, balBefore);
     }
 
@@ -111,7 +115,7 @@ contract OptionDeskEdge is Test {
         vm.warp(expiry + 1);
         _push(90);
         desk.settle(8);
-        vm.expectRevert(bytes("ITM"));
-        desk.sweepMargin(8);
+        vm.expectRevert(bytes("grace"));
+        desk.withdrawMargin(8);
     }
 }

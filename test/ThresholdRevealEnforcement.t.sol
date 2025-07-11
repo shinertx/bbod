@@ -2,10 +2,25 @@
 pragma solidity ^0.8.23;
 import "forge-std/Test.sol";
 import "../contracts/CommitRevealBSP.sol";
+import "../contracts/BlobFeeOracle.sol";
 
 contract ThresholdRevealEnforcement is Test {
     CommitRevealBSP pm;
+    BlobFeeOracle oracle;
+    address bettor = address(0xCAFE);
+    address[] signers;
+    uint256 private PK = 0xA11CE;
+    address private signer;
+
+    bytes32 DOMAIN_SEPARATOR;
+    bytes32 constant TYPEHASH = keccak256("FeedMsg(uint256 fee,uint256 deadline)");
+
+    receive() external payable {}
+
     function setUp() public {
+        signer = vm.addr(PK);
+        signers.push(signer);
+
         pm = new CommitRevealBSP(address(0));
     }
 

@@ -22,13 +22,16 @@ contract Fuzz_OptionDesk is Test {
         desk = new BlobOptionDesk(address(oracle));
     }
 
+    receive() external payable {}
+
     /// @notice Fuzz: writer margin must always be >= sum(paid) after settlement.
     function testFuzz_MarginSafety(uint256 strike, uint256 cap, uint256 fee, uint256 qty) public {
         strike = bound(strike, 1, 50);
         cap    = bound(cap, strike+1, strike+100);
         uint256 id = 1;
         uint256 expiry = block.timestamp + 1 hours;
-        desk.create{value: 10 ether}(id, strike, cap, expiry, 10);
+        uint256 maxPay = (cap - strike) * 1 gwei * 10;
+        desk.create{value: maxPay}(id, strike, cap, expiry, 10);
         qty = bound(qty, 1, 5);
         vm.deal(address(this), 100 ether);
         (uint256 tv, uint256 iv) = desk.optionCost(strike, expiry);
@@ -42,4 +45,4 @@ contract Fuzz_OptionDesk is Test {
         uint256 afterBal = address(desk).balance;
         assert(afterBal <= before);
     }
-} 
+}

@@ -252,14 +252,13 @@ contract CommitRevealBSP is ReentrancyGuard {
 
     /// @notice Commit hash(threshold, nonce) for the next round.
     function commitThreshold(bytes32 h) external onlyOwner {
-        require(commitRound == 0, "pending");
-        commitRound = cur + 1;
+        require(thresholdCommit == 0, "active-commit");
+        commitRound = cur;
         commitTs = block.timestamp;
         thresholdCommit = h;
-        nextThreshold = 0;
     }
 
-    /// @notice Reveal threshold for the committed round.
+    /// @notice Reveal a threshold for the subsequent round.
     function reveal(uint256 thr, uint256 nonce) external onlyOwner {
         require(commitRound == cur, "round");
         require(keccak256(abi.encodePacked(thr, nonce)) == thresholdCommit, "bad");
@@ -318,4 +317,4 @@ contract CommitRevealBSP is ReentrancyGuard {
     //////////////////////////////////////////////////////////////////////////*/
 
     receive() external payable {}
-} 
+}

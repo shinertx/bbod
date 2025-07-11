@@ -9,29 +9,23 @@ using MessageHashUtils for bytes32;
 
 contract OracleSlotFinality is Test {
     BlobFeeOracle oracle;
-    address signer = address(this);
+    uint256 signerKey;
+    address signer;
     bytes32 constant TYPEHASH = keccak256("FeedMsg(uint256 fee,uint256 deadline)");
     bytes32 DOMAIN_SEPARATOR;
 
     function setUp() public {
+        (signer, signerKey) = makeAddrAndKey("signer");
         address[] memory signers = new address[](1);
         signers[0] = signer;
         oracle = new BlobFeeOracle(signers, 1);
-        DOMAIN_SEPARATOR = keccak256(
-            abi.encode(
-                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-                keccak256(bytes("BlobFeeOracle")),
-                keccak256(bytes("1")),
-                block.chainid,
-                address(oracle)
-            )
-        );
+        DOMAIN_SEPARATOR = oracle.DOMAIN_SEPARATOR();
     }
 
     function _sig(uint256 fee, uint256 dl) internal view returns(bytes[] memory sigs){
         bytes32 structHash = keccak256(abi.encode(TYPEHASH, fee, dl));
         bytes32 digest = MessageHashUtils.toTypedDataHash(DOMAIN_SEPARATOR, structHash);
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(uint256(uint160(signer)), digest);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerKey, digest);
         sigs = new bytes[](1);
         sigs[0] = abi.encodePacked(r, s, v);
     }

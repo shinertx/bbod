@@ -8,7 +8,7 @@ import "lib/openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils
 using ECDSA for bytes32;
 using MessageHashUtils for bytes32;
 
-contract BBODSweep is Test {
+contract BBODWithdraw is Test {
     BlobOptionDesk desk;
     BlobFeeOracle oracle;
     uint256 PK = 0xA11CE;
@@ -32,6 +32,9 @@ contract BBODSweep is Test {
         );
     }
 
+    // Allow the test contract to receive ETH
+    receive() external payable {}
+
     bytes32 constant TYPEHASH = keccak256("FeedMsg(uint256 fee,uint256 deadline)");
 
     function _push(uint256 fee) internal {
@@ -44,7 +47,7 @@ contract BBODSweep is Test {
         oracle.push(BlobFeeOracle.FeedMsg({fee: fee, deadline: dl}), sigs);
     }
 
-    function testSweepMarginOTM() public {
+    function testWithdrawMarginOTM() public {
         uint256 expiry = block.timestamp + 1 hours;
         desk.create{value: 1 ether}(1, 100, 120, expiry, 1);
         vm.warp(expiry + 1);
@@ -52,7 +55,8 @@ contract BBODSweep is Test {
         desk.settle(1);
         vm.warp(expiry + desk.GRACE_PERIOD() + 1);
         uint256 balBefore = address(this).balance;
-        desk.sweepMargin(1);
-        assertEq(address(this).balance, balBefore + 1 ether);
+        desk.withdrawMargin(1);
+        uint256 bounty = 1 ether * desk.SETTLE_BOUNTY_BP() / 10_000;
+        assertEq(address(this).balance, balBefore + 1 ether - bounty);
     }
 }

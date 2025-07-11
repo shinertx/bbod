@@ -94,6 +94,10 @@ contract BSPFuzz is Test {
 
         (, , uint256 revealTs, , , , , , , , ) = pm.rounds(1);
         vm.warp(revealTs + 1);
+
+        // reveal threshold for round 2
+        pm.reveal(fee, 1);
+
         uint256 dl2 = block.timestamp + 30;
         bytes32 structHash2 = keccak256(abi.encode(TYPEHASH, uint256(50), dl2));
         bytes32 digest2 = MessageHashUtils.toTypedDataHash(DOMAIN_SEPARATOR, structHash2);
@@ -104,7 +108,7 @@ contract BSPFuzz is Test {
         pm.settle();
 
         // reveal threshold for round 2
-        pm.reveal(fee, 1);
+        
         (, , , , , , , uint256 thr, , , ) = pm.rounds(2);
         assertEq(thr, fee);
     }

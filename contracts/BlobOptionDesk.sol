@@ -2,6 +2,7 @@
 pragma solidity ^0.8.23;
 import "./IBlobBaseFee.sol";
 import "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import "forge-std/console.sol";
 
 contract BlobOptionDesk is ReentrancyGuard {
     struct Series {
@@ -103,7 +104,7 @@ contract BlobOptionDesk is ReentrancyGuard {
         (uint256 tv, uint256 iv) = optionCost(s.strike, s.expiry);
         uint256 cost = (tv + iv) * qty;
         require(msg.value == cost, "!prem");
-        require(s.sold + qty <= seriesMaxSold[id], "sold>limit");
+        require(s.sold + qty <= seriesMaxSold[id], "maxSold exceeded");
         s.sold += qty;
         bal[msg.sender][id] += qty;
 
@@ -136,16 +137,9 @@ contract BlobOptionDesk is ReentrancyGuard {
         seriesSettled[id] = true;
 
         if (bounty > 0) {
+            s.margin -= bounty;
             _safeSend(msg.sender, bounty);
             emit SettleBounty(id, msg.sender, bounty);
-        }
-
-        if (s.payWei == 0 && msg.sender == writer) {
-            uint256 refund = s.margin;
-            uint256 bal = address(this).balance;
-            if (refund > bal) refund = bal;
-            s.margin = 0;
-            _safeSend(writer, refund);
         }
     }
     function exercise(uint256 id) external nonReentrant notPaused {
@@ -178,18 +172,6 @@ contract BlobOptionDesk is ReentrancyGuard {
     /// @notice Grace period after expiry before writer can reclaim margin.
     uint256 public constant GRACE_PERIOD = 1 days;
 
-    /// @notice sweep remaining margin after all exercises or timeout
-    function sweepMargin(uint256 id) external nonReentrant notPaused {
-        Series storage s = series[id];
-        require(msg.sender == writer, "!writer");
-        require(seriesSettled[id], "unsettled");
-        require(block.timestamp > s.expiry + GRACE_PERIOD, "ITM");
-        uint256 amt = s.margin;
-        require(amt > 0, "none");
-        s.margin = 0;
-        _safeSend(writer, amt);
-    }
-
     /// @notice Withdraw unlocked premiums for a single series.
     function withdrawPremium(uint256 id) external nonReentrant notPaused {
         require(msg.sender == writer, "!auth");
@@ -214,7 +196,9 @@ contract BlobOptionDesk is ReentrancyGuard {
     //////////////////////////////////////////////////////////////////////////*/
 
     function _safeSend(address to, uint256 amount) internal {
+        console.log("Attempting to send", amount, "wei to", to);
+        console.log("Contract balance:", address(this).balance);
         (bool ok, ) = payable(to).call{value: amount}("");
         require(ok, "xfer");
     }
-} 
+}
