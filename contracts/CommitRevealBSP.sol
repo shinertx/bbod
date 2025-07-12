@@ -147,19 +147,21 @@ contract CommitRevealBSP is ReentrancyGuard {
         require(block.timestamp >= R.closeTs && block.timestamp < R.revealTs, "!reveal");
 
         Ticket storage T = tickets[cur][msg.sender];
+        require(T.commit != bytes32(0), "revealed");
         require(T.commit == keccak256(abi.encodePacked(msg.sender, side, salt)), "bad");
 
-        // Check position concentration limits to prevent manipulation
-        // Only apply this check when there's meaningful total revealed amount
-        uint256 currentTotalRevealed = R.hiTotal + R.loTotal;
-        if (currentTotalRevealed > 0) {
-            uint256 newSideTotal = (side == Side.Hi) ? R.hiTotal + T.amount : R.loTotal + T.amount;
-            uint256 totalRevealedAfter = currentTotalRevealed + T.amount;
-            require(newSideTotal * 10000 <= totalRevealedAfter * MAX_TOTAL_POSITION_RATIO, "position-limit");
-            
-            // Additional check: prevent single address from dominating
-            require(T.amount * 10000 <= totalRevealedAfter * MAX_INDIVIDUAL_POSITION_RATIO, "individual-limit");
+        // Correctly calculate the total amount that will be revealed *after* this transaction.
+        uint256 totalRevealedAfter = R.hiTotal + R.loTotal + T.amount;
+
+        // Check position concentration limits. This must apply to ALL reveals.
+        if (side == Side.Hi) {
+            require((R.hiTotal + T.amount) * 10000 <= totalRevealedAfter * MAX_TOTAL_POSITION_RATIO, "position-limit");
+        } else {
+            require((R.loTotal + T.amount) * 10000 <= totalRevealedAfter * MAX_TOTAL_POSITION_RATIO, "position-limit");
         }
+        
+        // Additional check: prevent single address from dominating
+        require(T.amount * 10000 <= totalRevealedAfter * MAX_INDIVIDUAL_POSITION_RATIO, "individual-limit");
 
         if (side == Side.Hi) {
             R.hiTotal += T.amount;
