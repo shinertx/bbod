@@ -2,7 +2,6 @@
 pragma solidity ^0.8.23;
 import "./IBlobBaseFee.sol";
 import "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
-import "forge-std/console.sol";
 
 contract BlobOptionDesk is ReentrancyGuard {
     uint256 constant MIN_EXPIRY = 1 hours;
@@ -37,21 +36,34 @@ contract BlobOptionDesk is ReentrancyGuard {
     event Purchase(uint256 indexed id, address indexed buyer, uint256 qty, uint256 timeValue, uint256 intrinsic);
 
     /*//////////////////////////////////////////////////////////////////////////
+                                   ACCESS CONTROL
+    //////////////////////////////////////////////////////////////////////////*/
+
+    address public owner;
+    
+    modifier onlyOwner() {
+        require(msg.sender == owner, "!owner");
+        _;
+    }
+    
+    function transferOwnership(address newOwner) external onlyOwner {
+        require(newOwner != address(0), "zero-address");
+        owner = newOwner;
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
                                    PAUSING
     //////////////////////////////////////////////////////////////////////////*/
 
     bool public paused;
     modifier notPaused() { require(!paused, "paused"); _; }
 
-    address public writer;
-
     constructor(address feeOracle) {
-        writer = msg.sender;
+        owner = msg.sender;
         F = IBlobBaseFee(feeOracle);
     }
 
-    function pause(bool p) external {
-        require(msg.sender == writer, "not-writer");
+    function pause(bool p) external onlyOwner {
         paused = p;
     }
 
@@ -85,17 +97,10 @@ contract BlobOptionDesk is ReentrancyGuard {
 
     function buy(uint256 id, uint256 num) public payable notPaused {
         Series storage s = series[id];
-        console.log("s.writer", s.writer);
         if (s.writer == address(0)) revert("bad-series");
-        console.log("block.timestamp", block.timestamp);
-        console.log("s.expiry - BUY_CUTOFF", s.expiry - BUY_CUTOFF);
         if (block.timestamp > s.expiry - BUY_CUTOFF) revert("too-late-to-buy");
-        console.log("s.sold + num", s.sold + num);
-        console.log("seriesMaxSold[id]", seriesMaxSold[id]);
         if (s.sold + num > seriesMaxSold[id]) revert("sold-out");
         uint256 expected = premium(s.strike, s.expiry) * num;
-        console.log("msg.value", msg.value);
-        console.log("expected", expected);
         if (msg.value != expected) revert("bad-premium");
         s.sold += num;
         bal[msg.sender][id] += num;
@@ -155,9 +160,17 @@ contract BlobOptionDesk is ReentrancyGuard {
 
         uint256 totalPayoutLiability = s.sold * s.payoutPerUnit;
         uint256 margin = s.margin;
-        s.margin = 0;
         uint256 bounty = margin / 100;
-        payable(msg.sender).transfer(margin - totalPayoutLiability - bounty);
+        
+        // CRITICAL: Prevent underflow that would drain contract
+        require(margin >= totalPayoutLiability + bounty, "insufficient-margin");
+        
+        s.margin = 0;
+        uint256 remainingMargin = margin - totalPayoutLiability - bounty;
+        
+        if (remainingMargin > 0) {
+            payable(msg.sender).transfer(remainingMargin);
+        }
     }
 
     function withdrawPremium(uint256 id) public {
@@ -184,9 +197,25 @@ contract BlobOptionDesk is ReentrancyGuard {
     }
 
     function premium(uint256 strike, uint256 expiry) public view returns (uint256) {
-        uint256 t = expiry - block.timestamp;
-        return k * t + intrinsic(strike);
+        uint256 timeToExpiry = expiry - block.timestamp;
+        if (timeToExpiry == 0) return intrinsic(strike);
+        
+        // Dynamic volatility-aware pricing
+        uint256 currentFee = F.blobBaseFee();
+        uint256 volMultiplier = 1e18;
+        
+        // Increase vol during congestion (fee > 20 gwei = high congestion)
+        if (currentFee > 20 * 1 gwei) {
+            volMultiplier = 2e18; // 2x volatility premium
+        }
+        if (currentFee > 50 * 1 gwei) {
+            volMultiplier = 4e18; // 4x volatility premium during extreme congestion
+        }
+        
+        uint256 timeValue = (k * sqrt(timeToExpiry) * volMultiplier) / 1e18;
+        return timeValue + intrinsic(strike);
     }
+
     function intrinsic(uint256 strike) public view returns (uint256) {
         uint256 feeNow = F.blobBaseFee();
         return feeNow > strike ? (feeNow - strike) * 1 gwei : 0;
@@ -200,8 +229,6 @@ contract BlobOptionDesk is ReentrancyGuard {
     //////////////////////////////////////////////////////////////////////////*/
 
     function _safeSend(address to, uint256 amount) internal {
-        console.log("Attempting to send", amount, "wei to", to);
-        console.log("Contract balance:", address(this).balance);
         (bool ok, ) = payable(to).call{value: amount}("");
         require(ok, "xfer");
     }

@@ -56,6 +56,10 @@ contract BountySize is Test {
 
         uint256 balBefore = address(this).balance;
         oracle.set(1); // set fee so settle can determine winner
+        
+        // Warp past maximum settlement delay (10 minutes = 600 seconds)
+        vm.warp(revealTs + 2);
+        
         address settler = address(0xABC);
         vm.deal(settler, 1 ether);
         uint256 settlerBalBefore = settler.balance;

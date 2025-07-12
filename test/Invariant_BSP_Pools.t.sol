@@ -44,7 +44,7 @@ contract Invariant_BSP_Pools is Test {
         bsp.reveal(CommitRevealBSP.Side.Lo, bytes32("salt2"));
 
         // settle phase
-        vm.warp(revealTs);
+        vm.warp(revealTs + 2); // Account for settlement delay
         oracle.set(30); // some fee
         bsp.settle();
         uint256 prevRound = bsp.cur() - 1;

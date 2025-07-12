@@ -26,21 +26,30 @@ contract ThresholdRevealEnforcement is Test {
     }
 
     function testSettleRevertsIfUnrevealed() public {
-        // Settle round 1 by waiting for timeout
-        (, , uint256 revealTs1, , , , , , , , , , , ) = pm.rounds(1);
-        vm.warp(revealTs1 + pm.THRESHOLD_REVEAL_TIMEOUT() + 1);
+        // Start fresh by manually advancing to a clean state
+        uint256 currentRound = pm.cur();
+        
+        // Get the current round timing
+        (, , uint256 revealTs, , , , , , , , , , , ) = pm.rounds(currentRound);
+        
+        // First just settle the current round normally to get to a fresh state
+        vm.warp(revealTs + 2); // Minimal advance for testing
         pm.settle();
-
-        // commit threshold for round 2 but don't reveal it
+        
+        // Now we're in a fresh round, commit threshold but don't reveal
+        currentRound = pm.cur();
         bytes32 h = keccak256(abi.encodePacked(uint256(50 gwei), uint256(1)));
         pm.commitThreshold(h);
-
+        
         // Set up oracle to have a valid fee for settlement
         pushFee(30); // 30 gwei fee
 
-        // attempt to settle round 2 without revealing threshold, before timeout
-        (, , uint256 revealTs2, , , , , , , , , , , ) = pm.rounds(2);
-        vm.warp(revealTs2 + 1);
+        // Get the new round timing and try to settle without revealing threshold
+        (, , uint256 newRevealTs, , , , , , , , , , , ) = pm.rounds(currentRound);
+        
+        // Go just past reveal window + minimal settlement delay, but well before timeout
+        vm.warp(newRevealTs + 2); // Small advance past reveal window
+        
         vm.expectRevert(bytes("!reveal"));
         pm.settle();
     }
@@ -62,7 +71,7 @@ contract ThresholdRevealEnforcement is Test {
 
         // settle round 1 via timeout
         (, , uint256 revealTs1, , , , , , , , , , , ) = pm.rounds(1);
-        vm.warp(revealTs1 + pm.THRESHOLD_REVEAL_TIMEOUT() + 1);
+        vm.warp(revealTs1 + pm.THRESHOLD_REVEAL_TIMEOUT() + 2); // Minimal delay for tests
         pm.settle();
 
         // get round 1 threshold for later comparison
@@ -70,7 +79,7 @@ contract ThresholdRevealEnforcement is Test {
 
         // settle round 2 via timeout
         (, , uint256 revealTs2, , , , , , , , , , , ) = pm.rounds(2);
-        vm.warp(revealTs2 + pm.THRESHOLD_REVEAL_TIMEOUT() + 1);
+        vm.warp(revealTs2 + pm.THRESHOLD_REVEAL_TIMEOUT() + 2); // Minimal delay for tests
         pm.settle();
 
         // After timeout, round 2 should have used round 1's threshold.

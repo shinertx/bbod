@@ -60,7 +60,7 @@ contract ReentrantSettle is Test {
         pm.reveal(CommitRevealBSP.Side.Lo, bytes32("s_alice"));
 
         (, , uint256 revealTs, , , , , , , , , , , ) = pm.rounds(1);
-        vm.warp(revealTs + 1);
+        vm.warp(revealTs + 2); // Account for settlement delay
         vm.prank(address(atk));
         vm.expectRevert(bytes("xfer"));
         atk.attack();

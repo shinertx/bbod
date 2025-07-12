@@ -66,7 +66,7 @@ contract BSPFuzz is Test {
 
         // have the oracle post a fee and settle current round
         pushFee(finalFee);
-        vm.warp(revealTs + 1); // past reveal window
+        vm.warp(revealTs + 2); // past reveal window + settlement delay
         
         // Store current round before settlement
         uint256 roundBeforeSettle = pm.cur();
@@ -102,7 +102,7 @@ contract BSPFuzz is Test {
         pm.reveal(CommitRevealBSP.Side.Hi, saltHi);
 
         // warp past reveal window and settle
-        vm.warp(revealTs + 1); // past reveal window
+        vm.warp(revealTs + 2); // past reveal window + settlement delay
         pushFee(150); // fee > 100, so hi should win
         pm.settle(); // Settle the round, hi is the winner
 
@@ -154,7 +154,7 @@ contract BSPFuzz is Test {
         pm.reveal(CommitRevealBSP.Side.Lo, saltLo);
 
         // 3. Settle round
-        vm.warp(revealTs + 1); // past reveal window
+        vm.warp(revealTs + 2); // past reveal window + settlement delay
         pushFee(150); // fee > 100, so hi should win
         pm.settle();
 
