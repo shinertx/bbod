@@ -95,28 +95,12 @@ export default function Home() {
     } catch(e:any){ setError(e.message); }
   }
   return (
-    <main className="p-4 space-y-4">
-      {alertMsg && <div className="bg-red-200 p-2">{alertMsg}</div>}
-      <h1 className="text-xl">Blob Fee (gwei): {fee}</h1>
-      <button onClick={connect} className="px-4 py-1 bg-blue-200">Connect Wallet</button>
-
-      <div>
-        <h2>Bet Parimutuel</h2>
-        <input value={amount} onChange={e=>setAmount(e.target.value)} className="border p-1 mr-2" /> ETH
-        <button onClick={()=>bet(true)} className="px-2 py-1 bg-green-200 mr-2">Bet Hi</button>
-        <button onClick={()=>bet(false)} className="px-2 py-1 bg-red-200">Bet Lo</button>
+    <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gray-900 text-white">
+      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
+        <h1 className="text-4xl font-bold text-center">
+          Blob Fee Volatility Market
+        </h1>
       </div>
-
-      <div>
-        <h2>Options</h2>
-        <input value={optId} onChange={e=>setOptId(e.target.value)} className="border p-1 mr-2" placeholder="id" />
-        <input value={qty} onChange={e=>setQty(e.target.value)} className="border p-1 mr-2" placeholder="qty" />
-        <button onClick={buy} className="px-2 py-1 bg-yellow-200 mr-2">Buy</button>
-        <button onClick={claim} className="px-2 py-1 bg-gray-200 mr-2">Claim</button>
-        <button onClick={exercise} className="px-2 py-1 bg-purple-200">Exercise</button>
-      </div>
-
-      {error && <div className="text-red-500">{error}</div>}
     </main>
-  );
+  )
 }

@@ -259,6 +259,8 @@ contract CommitRevealBSP is ReentrancyGuard {
                                  POST-SETTLEMENT
     //////////////////////////////////////////////////////////////////////////*/
 
+    error PoolHasNoWinners();
+
     function claim(uint256 roundId, Side side, bytes32 salt) public nonReentrant notPaused {
         Round storage r = rounds[roundId];
         require(r.settled, "unsettled");
@@ -296,34 +298,31 @@ contract CommitRevealBSP is ReentrancyGuard {
 
     function _payout(uint256 id, address who) internal {
         Round storage r = rounds[id];
-        Side side = tickets[id][who].side;
-        bool hiWin = r.feeResult >= r.threshold;
-        bool win = (hiWin && side == Side.Hi) || (!hiWin && side == Side.Lo);
-        require(win, "lose");
+        Ticket storage bet = tickets[id][who];
+        require(!bet.claimed, "claimed");
+        bet.claimed = true;
 
-        uint256 totalWinnerStake = (r.winner == Side.Hi) ? r.hiTotal : r.loTotal;
-        uint256 totalLoserStake = (r.winner == Side.Hi) ? r.loTotal : r.hiTotal;
-        uint256 nonRevealedStake = r.totalCommits - r.hiTotal - r.loTotal;
-
-        // if one side has no bets AND there are no non-revealed stakes, refund
-        uint256 pay;
-        if ((r.hiTotal == 0 || r.loTotal == 0) && nonRevealedStake == 0) {
-            pay = tickets[id][who].amount;
-            _safeSend(who, pay);
+        uint256 winnerTotal = r.winner == Side.Hi ? r.hiTotal : r.loTotal;
+        // This check should ideally not be hit if claim is called correctly
+        if (winnerTotal == 0) {
+            // This case should be handled by the one-sided refund logic in `claim`
+            // but as a safeguard, we prevent division by zero.
             return;
         }
         
-        uint256 pot = totalLoserStake + nonRevealedStake;
+        uint256 loserTotal = r.winner == Side.Hi ? r.loTotal : r.hiTotal;
+        uint256 nonRevealed = r.totalCommits - r.hiTotal - r.loTotal;
+
+        // The total pot available for distribution is the sum of winning, losing, and non-revealed stakes.
+        uint256 totalPot = r.hiTotal + r.loTotal + nonRevealed;
         
-        // Prevent rounding attacks by enforcing minimum precision
-        uint256 rawPayout = (tickets[id][who].amount * pot) / totalWinnerStake;
-        require(rawPayout > 0 || pot == 0, "dust-payout");
-        
-        uint256 payout = tickets[id][who].amount + rawPayout;
-        
-        tickets[id][who].claimed = true;
-        _safeSend(who, payout);
+        // The fees (rake + bounty) were already calculated on the total pot and sent out during settlement.
+        // The payout for an individual is their proportional share of the pot *after* fees.
+        uint256 totalPayoutPool = totalPot - r.bounty - (totalPot * RAKE_BP / 10_000);
+
+        uint256 payout = (bet.amount * totalPayoutPool) / winnerTotal;
         emit Payout(id, who, payout);
+        _safeSend(who, payout);
     }
 
     function _open(uint256 thresholdGwei) internal {
