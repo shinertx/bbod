@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useBbod } from "@/hooks/useBbod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -12,20 +11,23 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatEther } from "viem";
+import { formatEther, formatUnits } from "viem";
+import { OptionSeries } from "@/hooks/useBbod";
 
-export function BbodBuy() {
-  const { options, buy, isLoading: isBbodLoading, refetch } = useBbod();
+interface BbodBuyProps {
+  options: OptionSeries[];
+  buy: (id: bigint, num: bigint, premium: bigint) => Promise<any>;
+  refetch: () => void;
+}
+
+export function BbodBuy({ options, buy, refetch }: BbodBuyProps) {
   const [selectedOptionId, setSelectedOptionId] = useState<string>("");
   const [quantity, setQuantity] = useState("1");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  const activeOptions = options.filter(
-    (o) => Number(o.expiry) * 1000 > Date.now()
-  );
-  const selectedOption = activeOptions.find(
+  const selectedOption = options.find(
     (o) => o.id.toString() === selectedOptionId
   );
   const totalPremium = selectedOption
@@ -37,76 +39,91 @@ export function BbodBuy() {
       setError("Please select an option.");
       return;
     }
+    if (BigInt(quantity) <= 0) {
+      setError("Quantity must be greater than zero.");
+      return;
+    }
+    if (BigInt(quantity) > (selectedOption.cap - selectedOption.sold)) {
+        setError("Not enough options available to buy.");
+        return;
+    }
+
     setIsLoading(true);
     setError("");
     setMessage("");
     try {
-      const tx = await buy(
+      await buy(
         selectedOption.id,
         BigInt(quantity),
         selectedOption.premium
       );
       setMessage(`Successfully purchased ${quantity} option(s).`);
-      refetch();
+      refetch(); // Refetch options to update the list
     } catch (e: any) {
-      setError(
-        e.shortMessage || e.message || "An error occurred during purchase."
-      );
+      setError(e.message || "An error occurred during purchase.");
     } finally {
       setIsLoading(false);
+      setQuantity("1");
+      setSelectedOptionId("");
     }
   };
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Buy Option</CardTitle>
+        <CardTitle>Buy Options</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <Select
-          onValueChange={setSelectedOptionId}
-          value={selectedOptionId}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Select an option series" />
-          </SelectTrigger>
-          <SelectContent>
-            {activeOptions.map((option) => (
-              <SelectItem key={option.id.toString()} value={option.id.toString()}>
-                Strike:{" "}
-                {formatEther(option.strike)} gwei, Expiry:{" "}
-                {new Date(Number(option.expiry) * 1000).toLocaleString()}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Input
-          type="number"
-          placeholder="Quantity"
-          value={quantity}
-          onChange={(e) => setQuantity(e.target.value)}
-          min="1"
-        />
+        <div>
+          <Select
+            onValueChange={setSelectedOptionId}
+            value={selectedOptionId}
+            disabled={options.length === 0}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select an option to buy" />
+            </SelectTrigger>
+            <SelectContent>
+              {options.length > 0 ? (
+                options.map((option) => (
+                  <SelectItem key={option.id.toString()} value={option.id.toString()}>
+                    {`Strike: ${formatUnits(option.strike, 9)} gwei - Premium: ${formatEther(option.premium)} ETH`}
+                  </SelectItem>
+                ))
+              ) : (
+                <SelectItem value="none" disabled>No options available</SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+        </div>
         {selectedOption && (
-          <div>
-            <p>Premium per option: {formatEther(selectedOption.premium)} ETH</p>
-            <p className="font-bold">
+          <>
+            <div>
+              <Input
+                id="quantity"
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+                type="number"
+                min="1"
+                placeholder="Quantity"
+              />
+            </div>
+            <div className="text-sm text-gray-500">
               Total Premium: {formatEther(totalPremium)} ETH
-            </p>
-          </div>
+            </div>
+          </>
         )}
-      </CardContent>
-      <CardFooter className="flex-col items-start">
         <Button
           onClick={handleBuy}
-          disabled={
-            isLoading || isBbodLoading || !selectedOption || !quantity
-          }
+          disabled={!selectedOption || isLoading || !quantity}
+          className="w-full"
         >
-          {isLoading ? "Purchasing..." : "Buy Option"}
+          {isLoading ? "Purchasing..." : "Buy Options"}
         </Button>
-        {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
-        {message && <p className="text-green-500 text-sm mt-2">{message}</p>}
+      </CardContent>
+      <CardFooter className="flex flex-col items-start space-y-2">
+        {message && <p className="text-green-600">{message}</p>}
+        {error && <p className="text-red-600">{error}</p>}
       </CardFooter>
     </Card>
   );

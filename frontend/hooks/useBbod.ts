@@ -88,6 +88,10 @@ export const useBbod = () => {
     }
   }, [account]);
 
+  const refetch = useCallback(() => {
+    fetchOptions();
+  }, [fetchOptions]);
+
   useEffect(() => {
     fetchOptions();
   }, [fetchOptions]);
@@ -98,49 +102,46 @@ export const useBbod = () => {
         setError(new Error("Wallet not connected"));
         return;
       }
+
       try {
-        const totalPremium = premium * num;
-        const tx = await writeContract(config, {
+        const { hash } = await writeContract(config, {
           ...bbodContract,
           functionName: "buy",
           args: [id, num],
-          value: totalPremium,
+          value: premium * num,
         });
-        console.log("Buy transaction sent:", tx);
-        await fetchOptions(); // Refresh options after buying
-        return tx;
+        return { hash };
       } catch (e: any) {
-        console.error("Error buying option:", e);
+        console.error("Failed to buy BBOD options:", e);
         setError(e);
-        throw e; // Re-throw for the component to handle
+        throw e; // re-throw for the component to catch
       }
     },
-    [account, fetchOptions]
+    [account]
   );
 
   const exercise = useCallback(
-    async (id: bigint, num: bigint) => {
+    async (id: bigint) => {
       if (!account) {
         setError(new Error("Wallet not connected"));
         return;
       }
+
       try {
-        const tx = await writeContract(config, {
+        const { hash } = await writeContract(config, {
           ...bbodContract,
           functionName: "exercise",
-          args: [id, num],
+          args: [id],
         });
-        console.log("Exercise transaction sent:", tx);
-        await fetchOptions(); // Refresh options after exercising
-        return tx;
+        return { hash };
       } catch (e: any) {
-        console.error("Error exercising option:", e);
+        console.error("Failed to exercise BBOD options:", e);
         setError(e);
-        throw e; // Re-throw for the component to handle
+        throw e; // re-throw for the component to catch
       }
     },
-    [account, fetchOptions]
+    [account]
   );
 
-  return { options, buy, exercise, isLoading, error, refetch: fetchOptions };
+  return { options, isLoading, error, buy, exercise, refetch };
 };

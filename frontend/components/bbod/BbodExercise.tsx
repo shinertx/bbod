@@ -3,8 +3,6 @@
 import { useState } from "react";
 import { useBbod } from "@/hooks/useBbod";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -12,56 +10,116 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { useAccount } from "wagmi";
+import { formatUnits } from "viem";
 
-export function BbodExercise({ exerciseOptions }) {
-  const { exercise } = useBbod();
-  const [selectedOption, setSelectedOption] = useState(null);
-  const [amount, setAmount] = useState("1");
+export function BbodExercise() {
+  const { address } = useAccount();
+  const { options, exercise, refetch, isLoading: isBbodLoading } = useBbod();
+  const [selectedOptionId, setSelectedOptionId] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
 
-  const handleExercise = () => {
-    if (selectedOption) {
-      exercise(selectedOption.id, BigInt(amount));
+  if (!address) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Exercise Options</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p>Please connect your wallet to see your options to exercise.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const exercisableOptions = options.filter(
+    (o) =>
+      o.userBalance > 0 &&
+      Number(o.expiry) * 1000 < Date.now() &&
+      !o.paidOut
+  );
+
+  const handleExercise = async () => {
+    if (!selectedOptionId) {
+      setError("Please select an option to exercise.");
+      return;
+    }
+    setIsLoading(true);
+    setError("");
+    setMessage("");
+    try {
+      await exercise(BigInt(selectedOptionId));
+      setMessage("Successfully exercised your options. Payout should arrive shortly.");
+      refetch(); // Refetch options to update the list
+    } catch (e: any) {
+      setError(e.message || "An error occurred during exercise.");
+    } finally {
+      setIsLoading(false);
+      setSelectedOptionId("");
     }
   };
 
   return (
-    <div className="space-y-4">
-      <div>
-        <Label>Select Option to Exercise</Label>
-        <Select
-          onValueChange={(value) => {
-            const option = exerciseOptions.find((o) => o.id.toString() === value);
-            setSelectedOption(option);
-          }}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Select an option to exercise" />
-          </SelectTrigger>
-          <SelectContent>
-            {exerciseOptions?.map((option) => (
-              <SelectItem key={option.id} value={option.id.toString()}>
-                Strike: {option.strike.toString()} - Expiry:{" "}
-                {new Date(Number(option.expiry) * 1000).toLocaleString()}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      {selectedOption && (
+    <Card>
+      <CardHeader>
+        <CardTitle>Exercise Your Options</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
         <div>
-          <Label htmlFor="exercise-amount">Amount</Label>
-          <Input
-            id="exercise-amount"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            type="number"
-            min="1"
-          />
+          <Select
+            onValueChange={setSelectedOptionId}
+            value={selectedOptionId}
+            disabled={isBbodLoading || exercisableOptions.length === 0}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select an expired option you own" />
+            </SelectTrigger>
+            <SelectContent>
+              {isBbodLoading ? (
+                <SelectItem value="loading" disabled>
+                  Loading...
+                </SelectItem>
+              ) : exercisableOptions.length > 0 ? (
+                exercisableOptions.map((option) => (
+                  <SelectItem
+                    key={option.id.toString()}
+                    value={option.id.toString()}
+                  >
+                    {`ID: ${option.id} - Balance: ${formatUnits(
+                      option.userBalance,
+                      0
+                    )}`}
+                  </SelectItem>
+                ))
+              ) : (
+                <SelectItem value="none" disabled>
+                  No exercisable options found
+                </SelectItem>
+              )}
+            </SelectContent>
+          </Select>
         </div>
-      )}
-      <Button onClick={handleExercise} disabled={!selectedOption || !amount}>
-        Exercise Options
-      </Button>
-    </div>
+        <Button
+          onClick={handleExercise}
+          disabled={!selectedOptionId || isLoading || isBbodLoading}
+          className="w-full"
+        >
+          {isLoading ? "Exercising..." : "Exercise Options"}
+        </Button>
+      </CardContent>
+      <CardFooter className="flex flex-col items-start space-y-2">
+        {message && <p className="text-green-600">{message}</p>}
+        {error && <p className="text-red-600">{error}</p>}
+      </CardFooter>
+    </Card>
   );
 }
