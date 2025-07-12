@@ -8,7 +8,10 @@ const signers = keys.map(k => new ethers.Wallet(k, provider));
 
 const oracle = new ethers.Contract(
   process.env.ORACLE!,
-  ["function push((uint256 fee,uint256 deadline),bytes[] sigs) external"],
+  [
+    "function push((uint256 fee,uint256 deadline,uint256 nonce),bytes[] sigs) external",
+    "function nonces(address) view returns (uint256)"
+  ],
   signers[0]
 );
 
@@ -26,7 +29,7 @@ let lastFee = 0;
     chainId: Number(network.chainId),
     verifyingContract: oracle.target as string,
   };
-  const types = { FeedMsg: [{ name: "fee", type: "uint256" }, { name: "deadline", type: "uint256" }] };
+  const types = { FeedMsg: [{ name: "fee", type: "uint256" }, { name: "deadline", type: "uint256" }, { name: "nonce", type: "uint256" }] };
 
   async function publish() {
     const fee: number = await provider.send("eth_blobBaseFee", []);
@@ -36,10 +39,16 @@ let lastFee = 0;
       return;
     }
     const deadline = Math.floor(Date.now() / 1000) + 30;
-    const message = { fee, deadline };
+    
+    // Fetch current nonce for the first signer
+    const nonce = await oracle.nonces(signers[0].address);
+    
+    const message = { fee, deadline, nonce };
     const sigs: string[] = [];
     for (const w of signers) {
-      sigs.push(await w.signTypedData(domain, types, message));
+      // All signers must sign the same nonce for this push
+      const messageForSigner = { fee, deadline, nonce: await oracle.nonces(w.address) };
+      sigs.push(await w.signTypedData(domain, types, messageForSigner));
     }
     const tx = await oracle.push(message, sigs);
     console.log(`pushed ${fee} gwei -> ${tx.hash}`);

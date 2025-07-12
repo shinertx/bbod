@@ -23,8 +23,8 @@ using MessageHashUtils for bytes32;
  *         accounts are the signers that are specified at construction time.
  */
 contract BlobFeeOracle is IBlobBaseFee, EIP712 {
-    struct FeedMsg { uint256 fee; uint256 deadline; }
-    bytes32 private constant FEED_TYPEHASH = keccak256("FeedMsg(uint256 fee,uint256 deadline)");
+    struct FeedMsg { uint256 fee; uint256 deadline; uint256 nonce; }
+    bytes32 private constant FEED_TYPEHASH = keccak256("FeedMsg(uint256 fee,uint256 deadline,uint256 nonce)");
     /*//////////////////////////////////////////////////////////////////////////
                                       EVENTS
     //////////////////////////////////////////////////////////////////////////*/
@@ -47,6 +47,9 @@ contract BlobFeeOracle is IBlobBaseFee, EIP712 {
     mapping(address => uint256) private signerIndex;
     mapping(address => bool)    public isSigner;
     mapping(address => bool)    public jailed;
+
+    /// @dev Per-signer nonce to prevent signature replay.
+    mapping(address => uint256) public nonces;
 
     /// @dev Track if a slot already finalised.
     mapping(uint256 => bool) public slotPushed;
@@ -121,15 +124,25 @@ contract BlobFeeOracle is IBlobBaseFee, EIP712 {
         require(block.timestamp < msg.deadline, "deadline");
         require(sigs.length >= minSigners, "quorum");
 
-        bytes32 digest = _hashTypedDataV4(keccak256(abi.encode(FEED_TYPEHASH, msg.fee, msg.deadline)));
+        bytes32 digest = _hashTypedDataV4(keccak256(abi.encode(FEED_TYPEHASH, msg.fee, msg.deadline, msg.nonce)));
 
         uint256 slot = block.timestamp / 12;
         require(!slotPushed[slot], "pushed");
 
         uint256 signerMask;
+        address lastSigner;
         for (uint256 i = 0; i < sigs.length; i++) {
             address signer = ECDSA.recover(digest, sigs[i]);
             require(isSigner[signer], "!signer");
+            require(!jailed[signer], "jailed");
+            if (i == 0) { // First signature sets the nonce for this push call
+                require(msg.nonce == nonces[signer], "bad-nonce");
+                nonces[signer]++;
+                lastSigner = signer;
+            } else { // Subsequent signatures must match the first signer's expected nonce
+                require(msg.nonce == nonces[signer], "bad-nonce");
+                nonces[signer]++;
+            }
             uint256 idx = signerIndex[signer];
             require((signerMask & (1 << idx)) == 0, "dup");
             signerMask |= (1 << idx);

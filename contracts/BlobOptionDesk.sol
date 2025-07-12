@@ -74,8 +74,13 @@ contract BlobOptionDesk is ReentrancyGuard {
     function create(uint256 id, uint256 strike, uint256 cap, uint256 expiry, uint256 maxSold) public payable {
         if (series[id].writer != address(0)) revert("series-exists");
         if (strike == 0) revert("0-strike");
+        if (cap <= strike) revert("cap-le-strike");
         if (expiry < block.timestamp + MIN_EXPIRY) revert("too-soon");
         if (msg.value == 0) revert("no-margin");
+
+        uint256 maxPayout = (cap - strike) * 1 gwei;
+        uint256 requiredMargin = maxSold * maxPayout;
+        require(msg.value >= requiredMargin, "insufficient-margin");
 
         series[id] = Series({
             writer: msg.sender,
