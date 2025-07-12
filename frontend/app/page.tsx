@@ -1,8 +1,7 @@
 "use client";
 
 import { ConnectWallet } from "@/components/ConnectWallet";
-import { BspActions } from "@/components/bsp/BspActions";
-import { BspRoundInfo } from "@/components/bsp/BspRoundInfo";
+import { BspPanel } from "@/components/bsp/BspPanel";
 
 export default function Home() {
   return (
@@ -16,17 +15,13 @@ export default function Home() {
 
       <div className="flex flex-col lg:flex-row w-full max-w-5xl mt-8 gap-8">
         {/* BSP Section */}
-        <div className="flex-1 bg-gray-800 p-6 rounded-lg flex flex-col gap-4">
-          <h2 className="text-xl font-semibold mb-4 text-center">
-            Hourly Parimutuel (BSP)
-          </h2>
-          <BspRoundInfo />
-          <BspActions />
-        </div>
+        <BspPanel />
 
         {/* BBOD Section */}
         <div className="flex-1 bg-gray-800 p-6 rounded-lg">
-          <h2 className="text-xl font-semibold mb-4">Blob Options (BBOD)</h2>
+          <h2 className="text-xl font-semibold mb-4 text-center">
+            Blob Options (BBOD)
+          </h2>
           {/* BBOD components will go here */}
           <p className="text-gray-400">Coming soon...</p>
         </div>

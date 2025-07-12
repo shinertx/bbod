@@ -1,9 +1,8 @@
 "use client";
 
-import { useReadContract } from "wagmi";
-import { bspContract } from "@/lib/contracts";
 import { formatEther } from "viem";
 import { useEffect, useState } from "react";
+import { RoundStatus } from "./BspPanel";
 
 function Countdown({ to }: { to: Date }) {
     const [now, setNow] = useState(new Date());
@@ -22,37 +21,17 @@ function Countdown({ to }: { to: Date }) {
     return <span>{hours}:{minutes}:{seconds}</span>;
 }
 
+export type BspRoundData = readonly [bigint, bigint, bigint, bigint, bigint, bigint, bigint, number, bigint, bigint, bigint, bigint, boolean, bigint];
 
-export function BspRoundInfo() {
-  const { data: commitRound, isLoading: isLoadingCommitRound } = useReadContract({
-    ...bspContract,
-    functionName: "commitRound",
-  });
+export interface BspRoundInfoProps {
+    roundData: BspRoundData;
+    status: RoundStatus;
+}
 
-  const { data: roundData, isLoading: isLoadingRoundData, error } = useReadContract({
-    ...bspContract,
-    functionName: "rounds",
-    args: [commitRound || BigInt(0)],
-    query: {
-        enabled: commitRound !== undefined,
-        refetchInterval: 5000,
-    }
-  });
 
-  if (isLoadingCommitRound) {
-    return <p>Loading current round...</p>;
-  }
-
-  if (isLoadingRoundData) {
+export function BspRoundInfo({ roundData, status }: BspRoundInfoProps) {
+  if (status === 'LOADING') {
     return <p>Loading round data...</p>;
-  }
-
-  if (error) {
-    return <p className="text-red-500">Error loading round data: {error.shortMessage || error.message}</p>
-  }
-
-  if (!roundData) {
-    return <p>No round data available for round {commitRound?.toString()}.</p>;
   }
 
   const [id, closeTs, revealTs, settleTs, hiTotal, loTotal, totalCommits, winner, threshold, thresholdCommit, feeResult, settlePriceGwei, settled, bounty] = roundData;
@@ -60,20 +39,11 @@ export function BspRoundInfo() {
   const closeDate = new Date(Number(closeTs) * 1000);
   const revealDate = new Date(Number(revealTs) * 1000);
   
-  const now = new Date();
-  let status = "OPEN";
-  let timer: React.ReactNode = <Countdown to={closeDate} />;
-  if (now > closeDate) {
-      status = "REVEAL";
+  let timer: React.ReactNode = null;
+  if (status === 'OPEN') {
+      timer = <Countdown to={closeDate} />;
+  } else if (status === 'REVEAL') {
       timer = <Countdown to={revealDate} />;
-  }
-  if (now > revealDate) {
-      status = "SETTLEMENT";
-      timer = null;
-  }
-  if (settled) {
-      status = "SETTLED";
-      timer = null;
   }
 
 
