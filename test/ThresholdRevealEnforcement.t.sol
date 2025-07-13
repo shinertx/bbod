@@ -56,13 +56,14 @@ contract ThresholdRevealEnforcement is Test {
 
     function pushFee(uint256 fee) internal {
         uint256 dl = block.timestamp + 12;
+        uint256 nonce = 0;
         uint256 finalFeeWei = fee * 1 gwei;
-        bytes32 structHash = keccak256(abi.encode(TYPEHASH, finalFeeWei, dl));
+        bytes32 structHash = keccak256(abi.encode(TYPEHASH, finalFeeWei, dl, nonce));
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", oracle.DOMAIN_SEPARATOR(), structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest);
         bytes[] memory signatures = new bytes[](1);
         signatures[0] = abi.encodePacked(r, s, v);
-        oracle.push(BlobFeeOracle.FeedMsg(finalFeeWei, dl), signatures);
+        oracle.push(BlobFeeOracle.FeedMsg(finalFeeWei, dl, nonce), signatures);
     }
 
     function testSettleAfterTimeoutUsesPrevThreshold() public {

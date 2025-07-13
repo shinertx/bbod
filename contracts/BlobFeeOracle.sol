@@ -2,21 +2,19 @@
 pragma solidity ^0.8.23;
 
 import "lib/openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
-import "lib/openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
 import "lib/openzeppelin-contracts/contracts/utils/cryptography/EIP712.sol";
 import "./IBlobBaseFee.sol";
-using MessageHashUtils for bytes32;
 
 /**
  * @title BlobFeeOracle
  * @notice Simple 3-of-N push-oracle for the blob base-fee (denominated in gwei)
- *         Signers submit fee observations once per 12-second slot.  When the
+ *         Signers submit fee observations once per 12-second slot. When the
  *         configured quorum is reached the oracle records the fee contained in
  *         the signed message (one of the submitted observations) as the
  *         canonical value for that slot.
  *
  *         To keep gas costs predictable the implementation deliberately avoids
- *         dynamic arrays in storage.  Instead, a bit-mask is used to keep track
+ *         dynamic arrays in storage. Instead, a bit-mask is used to keep track
  *         of which signers have already voted in a given slot.
  *
  *         The contract is self-contained and owner-less – the only privileged
@@ -58,185 +56,78 @@ contract BlobFeeOracle is IBlobBaseFee, EIP712 {
     uint256 public lastFee;
 
     /// @dev Timestamp when `lastFee` was updated.
-    uint256 public lastTs;
+    uint256 public lastFeeTs;
 
-    /// @dev Address of the timelock contract.
-    address public immutable timelock;
-
-    /// @dev Boolean indicating whether the contract is paused.
-    bool public paused;
-
-    /// @dev Allow manual override if oracle is inactive for a long period.
-    uint256 public constant OVERRIDE_DELAY = 7200; // slots (~1 day)
+    /// @dev Quorum of signatures required to push a fee.
+    uint256 public quorum;
 
     /*//////////////////////////////////////////////////////////////////////////
                                    CONSTRUCTOR
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @param _signers  Array of authorised signer addresses (max 256).
-    /// @param _quorum   Required number of signatures to finalise a slot.
-    constructor(address[] memory _signers, uint256 _quorum)
-        EIP712("BlobFeeOracle", "1")
-    {
-        require(_signers.length > 0 && _signers.length <= 256, "bad signers");
-        require(_quorum > 0 && _quorum <= _signers.length, "quorum");
-        require(_quorum * 3 >= _signers.length * 2, "q<2/3");
-
-        signers = _signers;
-        minSigners = _quorum;
-        for(uint256 i=0;i<_signers.length;i++){
-            signerIndex[_signers[i]] = i;
-            isSigner[_signers[i]] = true;
+    constructor(address[] memory _signers, uint256 _quorum) EIP712("BlobFeeOracle", "1") {
+        require(_quorum > 0 && _quorum <= _signers.length, "Invalid quorum");
+        quorum = _quorum;
+        for (uint i = 0; i < _signers.length; i++) {
+            address signer = _signers[i];
+            require(signer != address(0), "Zero address");
+            require(!isSigner[signer], "Duplicate signer");
+            isSigner[signer] = true;
+            signers.push(signer);
         }
-        timelock = msg.sender; // deployer becomes timelock
-        lastFee = 1 gwei; // Initialize with a non-zero value
     }
 
     /*//////////////////////////////////////////////////////////////////////////
-                                    MODIFIERS
+                                  PUBLIC METHODS
     //////////////////////////////////////////////////////////////////////////*/
 
-    modifier onlySigner() {
-        bool ok;
-        for (uint256 i = 0; i < signers.length; i++) {
-            if (msg.sender == signers[i]) {
-                ok = true;
-                break;
+    function push(FeedMsg[] calldata msgs, bytes[] calldata signatures) external {
+        require(msgs.length >= quorum, "Not enough signatures");
+        require(msgs.length == signatures.length, "Mismatched inputs");
+
+        uint256 fee = msgs[0].fee;
+        address[] memory seenSigners = new address[](msgs.length);
+        uint seenCount = 0;
+
+        for (uint256 i = 0; i < msgs.length; i++) {
+            FeedMsg calldata msg = msgs[i];
+            require(msg.fee == fee, "Mismatched fees");
+            require(msg.deadline >= block.timestamp, "Signature expired");
+
+            bytes32 structHash = keccak256(abi.encode(FEED_TYPEHASH, msg.fee, msg.deadline, msg.nonce));
+            bytes32 digest = _hashTypedDataV4(structHash);
+            address signer = ECDSA.recover(digest, signatures[i]);
+
+            require(isSigner[signer], "Invalid signer");
+            require(msg.nonce == nonces[signer], "Invalid nonce");
+
+            bool duplicate = false;
+            for(uint j=0; j < seenCount; j++){
+                if(seenSigners[j] == signer) {
+                    duplicate = true;
+                    break;
+                }
             }
-        }
-        require(ok, "!signer");
-        _;
-    }
+            require(!duplicate, "Duplicate signer");
 
-    modifier onlyTimelock() {
-        require(msg.sender == timelock, "not timelock");
-        _;
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                               EXTERNAL FUNCTIONS
-    //////////////////////////////////////////////////////////////////////////*/
-
-    /// @notice Push a new fee observation using EIP-712 quorum signatures.
-    /// @param msg       The fee message containing the fee and deadline.
-    /// @param sigs      Array of signatures from unique authorised signers.
-    function push(FeedMsg calldata msg, bytes[] calldata sigs) external {
-        require(block.timestamp < msg.deadline, "deadline");
-        require(sigs.length >= minSigners, "quorum");
-
-        bytes32 digest = _hashTypedDataV4(keccak256(abi.encode(FEED_TYPEHASH, msg.fee, msg.deadline, msg.nonce)));
-
-        uint256 slot = block.timestamp / 12;
-        require(!slotPushed[slot], "pushed");
-
-        uint256 signerMask;
-        address lastSigner;
-        for (uint256 i = 0; i < sigs.length; i++) {
-            address signer = ECDSA.recover(digest, sigs[i]);
-            require(isSigner[signer], "!signer");
-            require(!jailed[signer], "jailed");
-            if (i == 0) { // First signature sets the nonce for this push call
-                require(msg.nonce == nonces[signer], "bad-nonce");
-                nonces[signer]++;
-                lastSigner = signer;
-            } else { // Subsequent signatures must match the first signer's expected nonce
-                require(msg.nonce == nonces[signer], "bad-nonce");
-                nonces[signer]++;
-            }
-            uint256 idx = signerIndex[signer];
-            require((signerMask & (1 << idx)) == 0, "dup");
-            signerMask |= (1 << idx);
+            seenSigners[seenCount++] = signer;
         }
 
-        slotPushed[slot] = true;
-        lastFee = msg.fee;
-        lastTs = block.timestamp;
-        emit Pushed(msg.fee);
+        // --- State Changes ---
+        lastFee = fee;
+        lastFeeTs = block.timestamp;
+        for (uint256 i = 0; i < seenCount; i++) {
+            nonces[seenSigners[i]]++;
+        }
+
+        emit Pushed(fee);
     }
 
-    /// @dev See {EIP712-_domainSeparatorV4}.
+    function latest() external view returns (uint256, uint256) {
+        return (lastFee, lastFeeTs);
+    }
+
     function DOMAIN_SEPARATOR() external view returns (bytes32) {
         return _domainSeparatorV4();
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                               VIEW / PURE FUNCTIONS
-    //////////////////////////////////////////////////////////////////////////*/
-
-    /// @inheritdoc IBlobBaseFee
-    function blobBaseFee() external view override returns (uint256) {
-        return lastFee;
-    }
-
-    /// @notice Number of authorised signers.
-    function signerCount() external view returns (uint256) {
-        return signers.length;
-    }
-
-    /// @dev Count set bits using Brian Kernighan's algorithm.
-    function _popcount(uint256 x) private pure returns (uint256 c) {
-        while (x != 0) {
-            x &= x - 1;
-            unchecked { c++; }
-        }
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                              GOVERNANCE UPGRADE
-    //////////////////////////////////////////////////////////////////////////*/
-
-    address[] private pendingSigners;
-    uint256  private pendingMinSigners;
-    uint256  private readyTs;
-    uint256  public constant UPGRADE_DELAY = 48 hours;
-
-    function proposeSigners(address[] calldata _new, uint256 _q) external {
-        require(msg.sender == timelock, "!tl");
-        require(_new.length > 0 && _new.length <= 256, "bad");
-        require(_q>0 && _q<=_new.length, "q");
-        require(_q * 3 >= _new.length * 2, "q<2/3");
-        delete pendingSigners;
-        for(uint i=0;i<_new.length;i++) pendingSigners.push(_new[i]);
-        pendingMinSigners = _q;
-        readyTs = block.timestamp + UPGRADE_DELAY;
-    }
-
-    function execUpgrade() external {
-        require(msg.sender == timelock, "!tl");
-        require(readyTs!=0 && block.timestamp>=readyTs, "too early");
-        signers = pendingSigners;
-        minSigners = pendingMinSigners;
-        for(uint256 i=0;i<pendingSigners.length;i++){
-            address s = pendingSigners[i];
-            signerIndex[s] = i;
-            isSigner[s] = true;
-        }
-        delete readyTs;
-    }
-
-    /// @notice Manually set the fee if signers are inactive for too long.
-    /// @dev Allows timelock to unblock the system after ~1 day without pushes.
-    function overrideFee(uint256 slot, uint256 feeGwei) external {
-        require(msg.sender == timelock, "!tl");
-        require(block.timestamp / 12 >= slot + OVERRIDE_DELAY, "active");
-        require(!slotPushed[slot], "already-pushed");
-        slotPushed[slot] = true;
-        require(feeGwei < 10_000, "fee-out-of-range");
-        lastFee = feeGwei;
-        lastTs = block.timestamp;
-        emit Pushed(feeGwei);
-    }
-
-    function pause(bool p) external { require(msg.sender==timelock, "!tl"); paused=p; }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                                  SLASHING / JAILING
-    //////////////////////////////////////////////////////////////////////////*/
-
-    /// @notice Timelock can jail / unjail misbehaving signers (prevents voting).
-    function jailSigner(address s, bool j) external {
-        require(msg.sender == timelock, "!tl");
-        require(isSigner[s], "unknown");
-        jailed[s] = j;
     }
 }

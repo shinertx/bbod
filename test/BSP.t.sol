@@ -173,17 +173,14 @@ contract BSPFuzz is Test {
     }
 
     function pushFee(uint256 fee) internal {
-        // struct FeedMsg {
-        //     uint256 fee;
-        //     uint256 deadline;
-        // }
         uint256 dl = block.timestamp + 12;
+        uint256 nonce = 0;
         uint256 finalFeeWei = fee * 1 gwei;
-        bytes32 structHash = keccak256(abi.encode(TYPEHASH, finalFeeWei, dl));
+        bytes32 structHash = keccak256(abi.encode(TYPEHASH, finalFeeWei, dl, nonce));
         bytes32 digest = MessageHashUtils.toTypedDataHash(DOMAIN_SEPARATOR, structHash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(1, digest);
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = abi.encodePacked(r, s, v);
-        oracle.push(BlobFeeOracle.FeedMsg(finalFeeWei, dl), sigs);
+        oracle.push(BlobFeeOracle.FeedMsg(finalFeeWei, dl, nonce), sigs);
     }
 }

@@ -50,6 +50,7 @@ contract BBODFuzz is Test {
         vm.warp(expiry + 1);
         // sign and push fee
         uint256 dl = block.timestamp + 30;
+        uint256 nonce = 0;
         bytes32 domain = keccak256(abi.encode(
             keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
             keccak256(bytes("BlobFeeOracle")),
@@ -57,12 +58,13 @@ contract BBODFuzz is Test {
             block.chainid,
             address(oracle)
         ));
-        bytes32 structHash = keccak256(abi.encode(keccak256("FeedMsg(uint256 fee,uint256 deadline)"), uint256(fee), dl));
+        bytes32 structHash = keccak256(abi.encode(keccak256("FeedMsg(uint256 fee,uint256 deadline,uint256 nonce)"), uint256(fee), dl, nonce));
         bytes32 digest = MessageHashUtils.toTypedDataHash(domain, structHash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest);
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = abi.encodePacked(r, s, v);
-        oracle.push(BlobFeeOracle.FeedMsg({fee: fee, deadline: dl}), sigs);
+        oracle.push(BlobFeeOracle.FeedMsg({fee: fee, deadline: dl, nonce: nonce}), sigs);
+        nonce++;
 
         // exercise
         desk.settle(1);

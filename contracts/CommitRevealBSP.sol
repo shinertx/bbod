@@ -369,14 +369,12 @@ contract CommitRevealBSP is ReentrancyGuard {
         commitTs = block.timestamp;
         thresholdCommit = h;
     }
-
     function revealThreshold(uint256 thr, uint256 salt) external onlyOwner {
         require(commitRound == cur, "no commit");
         require(thresholdCommit == keccak256(abi.encodePacked(thr, salt)), "bad reveal");
         require(rounds[cur].totalCommits == 0, "round-active");
         nextThreshold = thr;
     }
-
     function setNextThreshold(uint256 thr) external onlyOwner {
         // Direct setting is only allowed if no commit-reveal is in progress
         // and the current round has not started.

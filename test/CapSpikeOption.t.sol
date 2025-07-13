@@ -55,12 +55,13 @@ contract CapSpikeOptionTest is Test {
             block.chainid,
             address(oracle)
         ));
-        bytes32 structHash = keccak256(abi.encode(keccak256("FeedMsg(uint256 fee,uint256 deadline)"), fee, dl));
+        uint256 nonce = 0;
+        bytes32 structHash = keccak256(abi.encode(keccak256("FeedMsg(uint256 fee,uint256 deadline,uint256 nonce)"), fee, dl, nonce));
         bytes32 digest = MessageHashUtils.toTypedDataHash(domain, structHash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PK, digest);
         bytes[] memory sigs = new bytes[](1);
         sigs[0] = abi.encodePacked(r, s, v);
-        oracle.push(BlobFeeOracle.FeedMsg({fee: fee, deadline: dl}), sigs); // fee higher than cap
+        oracle.push(BlobFeeOracle.FeedMsg({fee: fee, deadline: dl, nonce: nonce}), sigs); // fee higher than cap
 
         desk.settle(1);
         (, , , , , uint256 payWei, , ) = desk.series(1);
